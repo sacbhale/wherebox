@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Location removed · Inventory{% endblock %}
+{% block content %}
+<h1>This location was removed</h1>
+<p>The tag you scanned ({{ code }}) belonged to a location that has been deleted.
+Its contents were moved to the location that contained it.</p>
+{% if pending_move %}
+<p class="notice" id="pending-move-notice" role="status">Your move is still pending: nothing was
+moved. Scan another container's tag to finish it.</p>
+{% endif %}
+<p><a class="button" href="/">Go home</a></p>
+{% endblock %}

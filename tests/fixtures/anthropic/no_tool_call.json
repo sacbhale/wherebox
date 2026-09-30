@@ -1,0 +1,10 @@
+{
+  "id": "msg_01NoTool",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5-5",
+  "content": [{"type": "text", "text": "I can see a shelf with some items."}],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 800, "output_tokens": 12}
+}

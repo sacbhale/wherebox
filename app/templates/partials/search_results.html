@@ -1,0 +1,10 @@
+{% if searched %}
+  {% if results %}
+  <ul class="items" id="search-results">
+    {% for item in results %}{% include "partials/item_row.html" %}{% endfor %}
+  </ul>
+  {% if results|length >= 50 %}<p class="muted">Showing the first 50 matches.</p>{% endif %}
+  {% else %}
+  <p class="muted" id="search-results">No items found.</p>
+  {% endif %}
+{% endif %}

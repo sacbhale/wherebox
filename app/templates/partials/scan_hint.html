@@ -1,0 +1,11 @@
+<div class="sheet-backdrop" data-close-sheet></div>
+<div class="sheet" id="scan-hint" role="dialog" aria-modal="true" aria-labelledby="scan-hint-title">
+  <h2 id="scan-hint-title">Move {{ item.name }}</h2>
+  <p>Now scan the container's QR code or tap its NFC tag.</p>
+  <p class="muted">The move waits for 10 minutes.</p>
+  <div class="sheet-foot">
+    <button type="button" id="scan-cancel" class="secondary"
+            hx-post="/pending-move/cancel" hx-target="#sheet" hx-swap="innerHTML">Cancel</button>
+    <button type="button" id="scan-close" data-close-sheet>OK</button>
+  </div>
+</div>

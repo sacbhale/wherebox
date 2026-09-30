@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ location.name }} · Inventory{% endblock %}
+{% block content %}
+<p><a href="/l/{{ location.short_code }}">‹ Back to {{ location.name }}</a></p>
+<h1>Edit location</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+<form class="stack" method="post" action="/l/{{ location.short_code }}/rename">
+  <label>Name <input name="name" value="{{ location.name }}" required></label>
+  <button type="submit">Rename</button>
+</form>
+
+<form class="stack" method="post" action="/l/{{ location.short_code }}/move">
+  <label>Inside
+    <select name="parent_id">
+      <option value="" {% if location.parent_id is none %}selected{% endif %}>(top level)</option>
+      {% for loc in parents %}
+      <option value="{{ loc.id }}" {% if location.parent_id == loc.id %}selected{% endif %}>{{ loc.path }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Move</button>
+</form>
+{% endblock %}

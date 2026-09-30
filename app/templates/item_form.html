@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit item" if item_id else "Add item" }} · Inventory{% endblock %}
+{% block content %}
+<h1>{{ "Edit item" if item_id else "Add item" }}</h1>
+{% if errors %}<p class="error" role="alert">Please fix the highlighted fields.</p>{% endif %}
+<form class="stack" method="post" action="{{ '/items/%d/edit' % item_id if item_id else '/items/new' }}">
+  {% if from_review %}<input type="hidden" name="from" value="review">{% endif %}
+  {% macro err(key) %}{% if errors[key] %}<span class="error" id="err-{{ key }}">{{ errors[key] }}</span>{% endif %}{% endmacro %}
+  <label>Name <input name="name" value="{{ values.name or '' }}" required maxlength="200" autocomplete="off"></label>
+  {{ err("name") }}
+  <label>Quantity <input name="quantity" type="number" min="0" step="1" inputmode="numeric" value="{{ values.quantity or '0' }}"></label>
+  {{ err("quantity") }}
+  <label>Kind
+    <select name="kind">
+      {% for kind in kinds %}<option value="{{ kind }}" {% if values.kind == kind %}selected{% endif %}>{{ kind|capitalize }}</option>{% endfor %}
+    </select>
+  </label>
+  {{ err("kind") }}
+  <label>Category <input name="category" list="category-list" value="{{ values.category or '' }}" autocomplete="off"></label>
+  <datalist id="category-list">{% for cat in categories %}<option value="{{ cat.name }}">{% endfor %}</datalist>
+  <label>Location
+    <select name="location_id">
+      {% for loc in locations %}<option value="{{ loc.id }}" {% if values.location_id == loc.id|string %}selected{% endif %}>{{ loc.path }}</option>{% endfor %}
+    </select>
+  </label>
+  {{ err("location_id") }}
+  <label>Expiry date <input name="expiry_date" type="date" value="{{ values.expiry_date or '' }}"></label>
+  {{ err("expiry_date") }}
+  <label>Purchase date <input name="purchase_date" type="date" value="{{ values.purchase_date or '' }}"></label>
+  {{ err("purchase_date") }}
+  <label>Price <input name="price" inputmode="decimal" placeholder="0.00" value="{{ values.price or '' }}"></label>
+  {{ err("price") }}
+  <label>Notes <textarea name="notes" rows="3">{{ values.notes or '' }}</textarea></label>
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

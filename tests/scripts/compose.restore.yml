@@ -1,0 +1,21 @@
+# Override for tests/scripts/restore_check.sh (AC-33); not for production use.
+# Used as: docker compose -p inventory-restore-check -f docker-compose.yml -f <this file> ...
+# restore_check.sh sets RESTORE_DATA_DIR (a temp dir) and RESTORE_UID / RESTORE_GID.
+services:
+  app:
+    image: inventory-app:restore-check
+    env_file: !reset []
+    environment:
+      PUBLIC_BASE_URL: http://127.0.0.1:18000
+      HOUSEHOLD_PASSWORD: restore-test
+      AI_PROVIDER: fake
+      FAKE_AI_SCRIPT: /fixtures/fake_script.json
+      PUID: ${RESTORE_UID:-1000}
+      PGID: ${RESTORE_GID:-1000}
+    volumes: !override
+      - ${RESTORE_DATA_DIR:?set RESTORE_DATA_DIR}:/data
+      # Relative paths resolve against the project directory (the repo root).
+      - ./tests/fixtures/fake_script.json:/fixtures/fake_script.json:ro
+    ports: !override
+      - "127.0.0.1:18000:8000"
+    restart: "no"

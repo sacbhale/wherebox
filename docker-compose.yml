@@ -1,0 +1,25 @@
+services:
+  app:
+    build: .
+    image: inventory-app:latest
+    env_file: .env
+    environment:
+      DATA_DIR: /data # fixed inside the container; matches the volume below
+      # Trusted reverse-proxy addresses (uvicorn --proxy-headers). The default covers loopback
+      # and Docker bridge networks; set your proxy's exact IP with rootless Docker, Podman,
+      # userland-proxy or hairpin NAT (see docs/operations.md).
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1,172.16.0.0/12}
+    volumes:
+      - ./data:/data
+    # Published on loopback only, for a reverse proxy running on the host (never 0.0.0.0).
+    ports:
+      - "127.0.0.1:8000:8000"
+    # If the reverse proxy runs in Docker on a network shared with this service, remove
+    # `ports:` above and use `expose:` instead, so the app is reachable only from that network:
+    # expose:
+    #   - "8000"
+    # Start unprivileged instead of letting the entrypoint chown ./data and drop to PUID:PGID
+    # (for rootless Docker, Podman, or NFS/CIFS mounts with root_squash):
+    # user: "1000:1000"
+    stop_grace_period: 15s
+    restart: unless-stopped

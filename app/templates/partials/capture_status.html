@@ -1,0 +1,31 @@
+{# One capture's status. Unfinished captures poll every 2s; the endpoint answers 286 (stop
+   polling) with this partial once the capture is done or failed.
+   Context: capture, position, outcome, now. #}
+{% set labels = {"photo": "Photo", "receipt": "Receipt", "text": "Text", "reconcile": "Reconcile"} %}
+<div class="capture-status status-{{ capture.status }}" id="capture-{{ capture.id }}" role="status"
+     data-capture-status="{{ capture.status }}"
+     {% if capture.status in ("queued", "processing") %}hx-get="/captures/{{ capture.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <strong>{{ labels[capture.type] }}</strong>
+  {% if capture.status == "queued" %}
+    {% if capture.not_before > now %}
+    <span>Retrying shortly{% if capture.error %} ({{ capture.error }}){% endif %}.</span>
+    {% elif position %}
+    <span class="queue-position">Waiting: {{ position }} capture{{ "s" if position != 1 }} ahead.</span>
+    {% else %}
+    <span>Starting…</span>
+    {% endif %}
+  {% elif capture.status == "processing" %}
+    <span>Reading it now…</span>
+  {% elif capture.status == "done" %}
+    {% if outcome %}
+    <span>Added {% for place in outcome %}{{ place.n }} item{{ "s" if place.n != 1 }} to <a href="/l/{{ place.short_code }}">{{ place.name }}</a>{% if place.review %} ({{ place.review }} to review){% endif %}{{ ", " if not loop.last }}{% endfor %}.</span>
+    {% else %}
+    <span>Done: no items found.</span>
+    {% endif %}
+    {% if capture.merchant %}<span class="muted">{{ capture.merchant }}</span>{% endif %}
+  {% else %}
+    <span class="error">Failed: {{ capture.error or "unknown error" }}</span>
+    <button type="button" hx-post="/captures/{{ capture.id }}/retry"
+            hx-target="#capture-{{ capture.id }}" hx-swap="outerHTML">Retry</button>
+  {% endif %}
+</div>

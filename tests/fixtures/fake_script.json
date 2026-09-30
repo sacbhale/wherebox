@@ -1,0 +1,286 @@
+{
+  "description": "Scripted fake AI for e2e and restore_check. Steps are consumed in order: 1) a shelf photo with 12 items (2 below the 0.7 confidence threshold), 2) a receipt whose paper bag, bottle deposit, sales tax, subtotal and total lines must be dropped by the denylist, 3) a text capture: milk x2 and a drill with location_hint 'Garage'.",
+  "model": "fake-model",
+  "delay_s": 0.0,
+  "repeat_last": false,
+  "steps": [
+    {
+      "result": {
+        "items": [
+          {
+            "name": "AA batteries",
+            "quantity": 8,
+            "category": "Electronics",
+            "kind": "consumable",
+            "confidence": 0.95,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Duct tape",
+            "quantity": 1,
+            "category": "Tools",
+            "kind": "consumable",
+            "confidence": 0.92,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Claw hammer",
+            "quantity": 1,
+            "category": "Tools",
+            "kind": "belonging",
+            "confidence": 0.97,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Screwdriver set",
+            "quantity": 1,
+            "category": "Tools",
+            "kind": "belonging",
+            "confidence": 0.9,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "WD-40",
+            "quantity": 1,
+            "category": "Maintenance",
+            "kind": "consumable",
+            "confidence": 0.88,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Work gloves",
+            "quantity": 2,
+            "category": "Tools",
+            "kind": "belonging",
+            "confidence": 0.85,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Extension cord",
+            "quantity": 1,
+            "category": "Electronics",
+            "kind": "belonging",
+            "confidence": 0.93,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Light bulbs",
+            "quantity": 4,
+            "category": "Electronics",
+            "kind": "consumable",
+            "confidence": 0.8,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Zip ties",
+            "quantity": 1,
+            "category": "Hardware",
+            "kind": "consumable",
+            "confidence": 0.75,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Wood screws",
+            "quantity": 1,
+            "category": "Hardware",
+            "kind": "consumable",
+            "confidence": 0.62,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Paint brush",
+            "quantity": 3,
+            "category": "Painting",
+            "kind": "belonging",
+            "confidence": 0.55,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Flashlight",
+            "quantity": 1,
+            "category": "Electronics",
+            "kind": "belonging",
+            "confidence": 0.91,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          }
+        ],
+        "receipt": null,
+        "usage": {
+          "input_tokens": 1800,
+          "output_tokens": 420
+        }
+      }
+    },
+    {
+      "result": {
+        "items": [
+          {
+            "name": "Whole milk 1L",
+            "quantity": 2,
+            "category": "Food",
+            "kind": "consumable",
+            "confidence": 0.96,
+            "location_hint": null,
+            "price_cents": 258,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Sourdough bread",
+            "quantity": 1,
+            "category": "Food",
+            "kind": "consumable",
+            "confidence": 0.94,
+            "location_hint": null,
+            "price_cents": 399,
+            "purchase_date": "2026-09-12",
+            "matched_existing_id": null
+          },
+          {
+            "name": "Dish soap",
+            "quantity": 1,
+            "category": "Cleaning",
+            "kind": "consumable",
+            "confidence": 0.9,
+            "location_hint": null,
+            "price_cents": 329,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Paper bag",
+            "quantity": 1,
+            "category": "Other",
+            "kind": "consumable",
+            "confidence": 0.6,
+            "location_hint": null,
+            "price_cents": 10,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Bottle deposit",
+            "quantity": 2,
+            "category": "Other",
+            "kind": "consumable",
+            "confidence": 0.6,
+            "location_hint": null,
+            "price_cents": 50,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Sales tax",
+            "quantity": 1,
+            "category": "Other",
+            "kind": "consumable",
+            "confidence": 0.6,
+            "location_hint": null,
+            "price_cents": 62,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Subtotal",
+            "quantity": 1,
+            "category": "Other",
+            "kind": "consumable",
+            "confidence": 0.6,
+            "location_hint": null,
+            "price_cents": 986,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Total",
+            "quantity": 1,
+            "category": "Other",
+            "kind": "consumable",
+            "confidence": 0.6,
+            "location_hint": null,
+            "price_cents": 1048,
+            "purchase_date": null,
+            "matched_existing_id": null
+          }
+        ],
+        "receipt": {
+          "merchant": "Corner Grocery",
+          "purchase_date": "2026-09-14"
+        },
+        "usage": {
+          "input_tokens": 1500,
+          "output_tokens": 380
+        }
+      }
+    },
+    {
+      "result": {
+        "items": [
+          {
+            "name": "Milk",
+            "quantity": 2,
+            "category": "Food",
+            "kind": "consumable",
+            "confidence": 0.93,
+            "location_hint": null,
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          },
+          {
+            "name": "Cordless drill",
+            "quantity": 1,
+            "category": "Tools",
+            "kind": "belonging",
+            "confidence": 0.9,
+            "location_hint": "Garage",
+            "price_cents": null,
+            "purchase_date": null,
+            "matched_existing_id": null
+          }
+        ],
+        "receipt": null,
+        "usage": {
+          "input_tokens": 300,
+          "output_tokens": 90
+        }
+      }
+    }
+  ]
+}

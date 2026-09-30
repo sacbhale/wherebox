@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Settings · Inventory{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+{% if info.warnings %}
+<ul class="warnings" id="settings-warnings">
+  {% for warning in info.warnings %}<li class="error">{{ warning }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<h2>AI</h2>
+<dl>
+  <dt>Provider / model</dt>
+  <dd id="ai-provider">
+    {% if info.ai_disabled_reason %}AI disabled{% else %}{{ info.provider }} / {{ info.model }}{% endif %}
+  </dd>
+  <dt>This month ({{ info.timezone }})</dt>
+  <dd id="ai-month-tokens">{{ "{:,}".format(info.usage.input_tokens) }} input tokens,
+    {{ "{:,}".format(info.usage.output_tokens) }} output tokens</dd>
+  <dd id="ai-month-cost">Cost: ${{ "%.2f"|format(info.cost_usd) }} USD</dd>
+  <dt>Monthly budget</dt>
+  {% if info.budget_usd is none %}
+  <dd id="ai-budget">No budget set (USD)</dd>
+  {% else %}
+  <dd id="ai-budget">Budget: ${{ "%.2f"|format(info.budget_usd) }} USD</dd>
+  <dd id="ai-remaining">Remaining: ${{ "%.2f"|format(info.remaining_usd) }} USD</dd>
+  {% endif %}
+</dl>
+<p class="note" id="ai-timeout-note">{{ timeout_note }}</p>
+
+<h2>Tags</h2>
+<dl>
+  <dt>PUBLIC_BASE_URL</dt>
+  <dd id="public-base-url"><code>{{ info.public_base_url }}</code></dd>
+  <dd class="error" id="public-base-url-warning">{{ qr_warning }}</dd>
+</dl>
+
+<h2>Storage</h2>
+<dl>
+  <dt>Last backup</dt>
+  <dd id="last-backup">{{ info.last_backup_at or "Never" }}</dd>
+  <dt>Photo directory size</dt>
+  <dd id="photo-dir-size">{{ info.photo_dir_human }}</dd>
+</dl>
+{% endblock %}

@@ -1,0 +1,13 @@
+{
+  "id": "msg_01Truncated",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5-5",
+  "content": [
+    {"type": "tool_use", "id": "toolu_01Trunc", "name": "record_items",
+     "input": {"items": [{"name": "Rice", "quantity": 1, "kind": "consumable", "confidence": 0.9}]}}
+  ],
+  "stop_reason": "max_tokens",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 700, "output_tokens": 4096}
+}

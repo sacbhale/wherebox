@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Review · Inventory{% endblock %}
+{% block content %}
+{# Each action is one hx-post; the empty answer replaces (removes) the row (AC-7). #}
+{% set row_swap = 'hx-target="closest .review-row" hx-swap="outerHTML"' %}
+{% macro thumb(row) %}{% if row.photo_path and row.photo_path.lower().endswith(thumbnail_suffixes) %}<img class="review-thumb" src="/photos/{{ row.photo_id }}" alt="" loading="lazy" width="56" height="56">{% endif %}{% endmacro %}
+{% macro item_label(row) %}<a href="/items/{{ row.id }}/edit">{{ row.name }}</a> <span class="muted">in <a href="/l/{{ row.location_code }}">{{ row.location_name }}</a></span>{% endmacro %}
+<h1>Review</h1>
+{% if not (failed or flagged or missing or quantity) %}<p class="muted" id="review-empty">Nothing to review.</p>{% endif %}
+
+<section class="panel" id="review-failed">
+  <h2>Failed captures</h2>
+  {% if failed %}
+  <ul class="review-list">
+    {% for capture in failed %}
+    <li class="review-row" id="review-capture-{{ capture.id }}" data-capture-id="{{ capture.id }}">
+      <div><strong>{{ capture.type|capitalize }}</strong>{% if capture.location_name %} <span class="muted">for {{ capture.location_name }}</span>{% endif %}
+        <div class="error">{{ capture.error or "unknown error" }}</div></div>
+      <div class="review-actions">
+        <button type="button" class="review-retry" hx-post="/review/captures/{{ capture.id }}/retry" {{ row_swap|safe }}>Retry</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</section>
+
+<section class="panel" id="review-items">
+  <h2>Items to check</h2>
+  {% if flagged %}
+  <ul class="review-list">
+    {% for row in flagged %}
+    <li class="review-row" id="review-item-{{ row.id }}" data-item-id="{{ row.id }}">
+      {{ thumb(row) }}
+      <div>{{ item_label(row) }} <span class="muted">× {{ row.quantity }}{% if row.confidence is not none %} · {{ (row.confidence * 100)|round|int }}% sure{% endif %}</span></div>
+      <div class="review-actions">
+        <button type="button" class="review-keep" hx-post="/review/items/{{ row.id }}/keep" {{ row_swap|safe }}>Keep</button>
+        <a class="button secondary review-edit" href="/items/{{ row.id }}/edit?from=review">Edit</a>
+        <button type="button" class="danger review-delete" hx-post="/review/items/{{ row.id }}/delete" {{ row_swap|safe }}>Delete</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</section>
+
+<section class="panel" id="review-missing">
+  <h2>Not seen when reconciling</h2>
+  {% if missing %}
+  <ul class="review-list">
+    {% for row in missing %}
+    <li class="review-row" id="review-proposal-{{ row.proposal_id }}" data-proposal-id="{{ row.proposal_id }}" data-item-id="{{ row.id }}">
+      {{ thumb(row) }}
+      <div>{{ item_label(row) }} <span class="muted">× {{ row.quantity }}</span></div>
+      <div class="review-actions">
+        <button type="button" class="danger review-confirm-missing" hx-post="/review/proposals/{{ row.proposal_id }}/confirm-missing" {{ row_swap|safe }}>Confirm removal</button>
+        <button type="button" class="secondary review-still-here" hx-post="/review/proposals/{{ row.proposal_id }}/still-here" {{ row_swap|safe }}>Still here</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</section>
+
+<section class="panel" id="review-quantity">
+  <h2>Different counts</h2>
+  {% if quantity %}
+  <ul class="review-list">
+    {% for row in quantity %}
+    <li class="review-row" id="review-proposal-{{ row.proposal_id }}" data-proposal-id="{{ row.proposal_id }}" data-item-id="{{ row.id }}">
+      {{ thumb(row) }}
+      <div>{{ item_label(row) }} <span class="muted">recorded {{ row.quantity }}, counted {{ row.proposed_quantity }}</span></div>
+      <div class="review-actions">
+        <button type="button" class="review-accept" hx-post="/review/proposals/{{ row.proposal_id }}/accept" {{ row_swap|safe }}>Accept {{ row.proposed_quantity }}</button>
+        <button type="button" class="secondary review-dismiss" hx-post="/review/proposals/{{ row.proposal_id }}/dismiss" {{ row_swap|safe }}>Dismiss</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,2 @@
+{% for loc in targets %}{% include "partials/move_target_button.html" %}{% endfor %}
+{% if searched and not targets %}<li class="muted">No matching locations.</li>{% endif %}

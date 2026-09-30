@@ -1,0 +1,196 @@
+:root {
+  color-scheme: light dark;
+  --gap: 1rem;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --error: #b91c1c;
+  --muted: #6b7280;
+  --border: #d1d5db;
+  --bg: #ffffff;
+  --fg: #111827;
+  --surface: #f9fafb;
+  --bar-h: calc(3.75rem + env(safe-area-inset-bottom));
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #60a5fa;
+    --accent-soft: #1e3a5f;
+    --error: #f87171;
+    --muted: #9ca3af;
+    --border: #374151;
+    --bg: #111827;
+    --fg: #f3f4f6;
+    --surface: #1f2937;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); }
+.page { max-width: 40rem; margin: 0 auto; padding: var(--gap); padding-bottom: 4rem; }
+/* Keep the last content and scrolled-to elements clear of the fixed bottom bar. */
+html { scroll-padding-bottom: calc(var(--bar-h) + 0.5rem); }
+.with-bar .page { padding-bottom: calc(var(--bar-h) + 2rem); }
+h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+.muted { color: var(--muted); font-size: 0.9rem; }
+.error { color: var(--error); }
+
+/* Top bar */
+.topbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 0.5rem; padding: 0.5rem var(--gap); border-bottom: 1px solid var(--border);
+}
+.topbar nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
+.topbar a, .brand { text-decoration: none; }
+
+/* Links that act as buttons or list entries get a 44px touch target too. Links inside a
+   sentence (item meta, notes, messages) are exempt, as in WCAG 2.5.8. */
+.topbar a, .breadcrumb a, .links a, .toggle a, .item-name, ul.locations li a,
+.review-row > div > a {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; min-width: 44px;
+}
+ul.locations li a { flex: 1; justify-content: flex-start; }
+
+/* Sticky bottom bar: Search, Capture, Review within thumb reach (AC-32). */
+.bottombar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  display: flex; gap: 0.5rem; justify-content: center;
+  padding: 0.5rem var(--gap) calc(0.5rem + env(safe-area-inset-bottom));
+  background: var(--bg); border-top: 1px solid var(--border);
+}
+.bottombar a {
+  flex: 1; max-width: 12rem; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 0.5rem; font-weight: 600; text-decoration: none;
+  background: var(--accent-soft); color: var(--fg);
+}
+.bottombar #bar-capture { background: var(--accent); color: #fff; }
+.brand { font-weight: 700; color: var(--fg); }
+
+/* Forms and buttons: touch targets at least 44px */
+input, select, textarea, button, .button {
+  font: inherit; min-height: 44px; padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+}
+input, select, textarea {
+  width: 100%; border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+}
+input[type="checkbox"] { width: auto; min-height: 0; }
+button, .button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem;
+  background: var(--accent); color: #fff; border: 0; text-decoration: none; cursor: pointer;
+}
+button:disabled { opacity: 0.4; cursor: default; }
+.button.secondary, button.secondary {
+  background: var(--accent-soft); color: var(--fg);
+}
+button.danger { background: var(--error); }
+button.link {
+  background: none; color: var(--accent); padding: 0 0.25rem; min-height: 44px; min-width: 44px;
+}
+form.inline { display: inline; }
+label { display: flex; flex-direction: column; gap: 0.25rem; font-weight: 500; }
+label.check { flex-direction: row; align-items: center; gap: 0.5rem; min-height: 44px; }
+.stack { display: flex; flex-direction: column; gap: 0.75rem; }
+.row { display: flex; gap: 0.5rem; align-items: stretch; margin: 0.5rem 0; }
+.row input { flex: 1; }
+.searchbar { display: flex; gap: 0.5rem; }
+.searchbar input { flex: 1; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+.filters summary, .panel summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.panel { margin-top: 1.5rem; }
+.links { margin: 0.75rem 0; }
+.breadcrumb { font-size: 0.9rem; color: var(--muted); }
+
+/* Lists */
+ul.locations, ul.items { list-style: none; padding: 0; margin: 0; }
+ul.locations li {
+  display: flex; justify-content: space-between; align-items: center;
+  min-height: 44px; border-bottom: 1px solid var(--border);
+}
+.item {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+}
+.item-main { min-width: 0; flex: 1; }
+.item-name { font-weight: 600; text-decoration: none; color: var(--fg); }
+.item-meta { overflow-wrap: anywhere; }
+.item-path { color: var(--muted); }
+.item-actions { display: flex; align-items: center; gap: 0.25rem; position: relative; }
+.qty { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.qty-btn { min-width: 44px; padding: 0.5rem; }
+.badge {
+  font-size: 0.75rem; padding: 0 0.4rem; border-radius: 999px;
+  background: #fef3c7; color: #92400e; margin-left: 0.25rem;
+}
+.more-btn {
+  min-width: 44px; padding: 0.5rem; font-size: 1.25rem;
+  background: var(--accent-soft); color: var(--fg);
+}
+.item.used-up, .item.moved { color: var(--muted); }
+.item.moved a { overflow-wrap: anywhere; }
+
+/* Action sheet (bottom sheet, thumb-reachable) */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 20; background: rgb(0 0 0 / 0.4); }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
+  max-width: 40rem; max-height: 85vh; margin: 0 auto; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: var(--gap); padding-bottom: calc(var(--gap) + env(safe-area-inset-bottom));
+  background: var(--bg); border-radius: 1rem 1rem 0 0; border: 1px solid var(--border);
+}
+.sheet h2 { margin: 0; }
+.sheet h3 { font-size: 1rem; margin: 0.75rem 0 0; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.sheet-foot { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.sheet-foot > * { flex: 1; }
+ul.move-targets { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.move-target { width: 100%; justify-content: flex-start; text-align: left; overflow-wrap: anywhere; }
+
+/* Undo toasts */
+.toasts { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.toast {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: var(--surface);
+  border: 1px solid var(--border);
+}
+.item.toast { padding: 0.5rem 0.75rem; }
+.notice { padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: var(--accent-soft); }
+
+/* Tag / QR */
+.url { font-family: ui-monospace, monospace; font-size: 0.9rem; }
+.qr { display: block; max-width: 200px; height: auto; background: #fff; margin: 0.5rem 0; }
+
+/* Printable label */
+.label-page { background: #fff; color: #000; padding: 1rem; }
+.label {
+  display: inline-flex; flex-direction: column; align-items: center; text-align: center;
+  border: 1px dashed #999; padding: 0.5rem 1rem;
+}
+.label p { margin: 0.1rem 0; }
+.label-name { font-size: 1.25rem; font-weight: 700; }
+.label-path { font-size: 0.85rem; }
+.label-url { font-family: ui-monospace, monospace; font-size: 0.8rem; }
+@media print {
+  .no-print, .topbar, .bottombar { display: none; }
+  .label { border: 0; }
+}
+
+/* Elements toggled with the hidden attribute (e.g. the mic button) stay hidden despite display rules. */
+[hidden] { display: none !important; }
+
+/* Review queue */
+ul.review-list { list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.review-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border, #ddd); }
+.review-row .review-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.review-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; }
+
+/* Capture forms: space between the stacked photo, reconcile, receipt and text forms. */
+.capture-form { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; margin-bottom: 1.25rem; }
+.capture-form label, .capture-form textarea { align-self: stretch; }

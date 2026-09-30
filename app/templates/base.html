@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}Inventory{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body{% if request.state.session is defined %} class="with-bar"{% endif %}>
+  {% if request.state.session is defined %}
+  <header class="topbar">
+    <a class="brand" href="/">Inventory</a>
+    <nav>
+      <a href="/search">Search</a>
+      <a href="/items/new">Add item</a>
+      <a href="/review" id="nav-review">Review</a>
+      <a href="/settings">Settings</a>
+      <form method="post" action="/logout" class="inline">
+        <button type="submit" class="link">Sign out</button>
+      </form>
+    </nav>
+  </header>
+  {% endif %}
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+  {% if request.state.session is defined %}
+  <div id="sheet"></div>
+  {# Thumb-reachable shortcuts, always at the bottom of the screen (AC-32). #}
+  <nav class="bottombar" aria-label="Shortcuts">
+    <a id="bar-search" href="/search">Search</a>
+    <a id="bar-capture" href="{% block capture_href %}/#capture{% endblock %}">Capture</a>
+    <a id="bar-review" href="/review">Review</a>
+  </nav>
+  {% endif %}
+</body>
+</html>

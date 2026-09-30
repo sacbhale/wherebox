@@ -1,0 +1,24 @@
+<li class="item" id="item-{{ item.id }}" data-item-id="{{ item.id }}">
+  <div class="item-main">
+    <a class="item-name" href="/items/{{ item.id }}/edit">{{ item.name }}</a>
+    {% if item.needs_review %}<span class="badge">review</span>{% endif %}
+    <div class="item-meta muted">
+      {% if item.location_path %}<a class="item-path" href="/l/{{ item.location_code }}">{{ item.location_path }}</a>{% endif %}
+      {% if item.category_name %} · {{ item.category_name }}{% endif %}
+      {% if item.expiry_date %} · exp. {{ item.expiry_date }}{% endif %}
+    </div>
+  </div>
+  <div class="item-actions">
+    <button type="button" class="qty-btn" id="minus-{{ item.id }}" aria-label="Remove one {{ item.name }}"
+            hx-post="/items/{{ item.id }}/quantity" hx-vals='{"delta": "-1"}'
+            hx-target="#item-{{ item.id }}" hx-swap="outerHTML"
+            {% if item.quantity <= 0 %}disabled{% endif %}>−1</button>
+    <span class="qty" aria-label="Quantity">{{ item.quantity }}</span>
+    <button type="button" class="qty-btn" id="plus-{{ item.id }}" aria-label="Add one {{ item.name }}"
+            hx-post="/items/{{ item.id }}/quantity" hx-vals='{"delta": "1"}'
+            hx-target="#item-{{ item.id }}" hx-swap="outerHTML">+1</button>
+    <button type="button" class="more-btn" id="more-{{ item.id }}" aria-label="More actions for {{ item.name }}"
+            aria-haspopup="dialog"
+            hx-get="/items/{{ item.id }}/actions" hx-target="#sheet" hx-swap="innerHTML">⋯</button>
+  </div>
+</li>

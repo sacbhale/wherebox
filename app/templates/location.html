@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ location.name }} · Inventory{% endblock %}
+{% block capture_href %}/l/{{ location.short_code }}/capture{% endblock %}
+{% block content %}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/">Home</a>
+  {% for crumb in breadcrumb %} › {% if loop.last %}<span aria-current="page">{{ crumb.name }}</span>{% else %}<a href="/l/{{ crumb.short_code }}">{{ crumb.name }}</a>{% endif %}{% endfor %}
+</nav>
+<h1>{{ location.name }}</h1>
+{% if moved %}
+<div class="toasts" id="toasts">
+  {% for item, previous_id in moved %}
+  <div class="toast" id="toast-move-{{ item.id }}" role="status">
+    <span>Moved <strong>{{ item.name }}</strong> here</span>
+    <button type="button" class="undo" data-toast-undo hx-post="/items/{{ item.id }}/move"
+            hx-vals='{"location_id": "{{ previous_id }}", "undo": "1"}'
+            hx-target="#item-{{ item.id }}" hx-swap="delete">Undo</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="actions">
+  <a class="button" href="/l/{{ location.short_code }}/capture">Capture</a>
+  <a class="button" href="/l/{{ location.short_code }}/reconcile">Reconcile</a>
+  <a class="button secondary" href="/items/new?loc={{ location.id }}">Add item</a>
+</div>
+<div id="capture" hx-get="/captures/panel?loc={{ location.id }}" hx-trigger="load" hx-swap="outerHTML"></div>
+
+{% if children %}
+<h2>Inside</h2>
+<ul class="locations" id="child-locations">
+  {% for child in children %}
+  <li><a href="/l/{{ child.short_code }}">{{ child.name }}</a>
+    <span class="muted">{{ child.item_count }} item{{ "s" if child.item_count != 1 }}</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>Items</h2>
+<p class="toggle">
+  {% if subtree %}
+  Showing everything inside. <a href="/l/{{ location.short_code }}">Only items directly here</a>
+  {% else %}
+  Showing items directly here. <a href="/l/{{ location.short_code }}?sub=1">Include everything inside</a>
+  {% endif %}
+</p>
+{% if items %}
+<ul class="items" id="location-items">
+  {% for item in items %}{% include "partials/item_row.html" %}{% endfor %}
+</ul>
+{% else %}
+<p class="muted" id="location-items">No items here yet.</p>
+{% endif %}
+
+<details class="panel">
+  <summary>Add a location inside {{ location.name }}</summary>
+  <form class="row" method="post" action="/locations">
+    <input type="hidden" name="parent_id" value="{{ location.id }}">
+    <input name="name" placeholder="e.g. Shelf 2" aria-label="New location name" required>
+    <button type="submit">Add</button>
+  </form>
+</details>
+
+<section class="panel" id="tag">
+  <h2>Tag</h2>
+  <div class="row">
+    <input id="permanent-url" class="url" type="text" readonly value="{{ url }}" aria-label="Permanent URL">
+    <button type="button" data-copy="#permanent-url">Copy</button>
+  </div>
+  <img class="qr" src="/l/{{ location.short_code }}/qr.svg" alt="QR code for {{ url }}" width="200" height="200">
+  <p class="links">
+    <a href="/l/{{ location.short_code }}/qr.png?scale=10">Download PNG</a> ·
+    <a href="/l/{{ location.short_code }}/qr.svg" download="location-{{ location.short_code }}.svg">Download SVG</a> ·
+    <a href="/l/{{ location.short_code }}/label" target="_blank">Print label</a>
+  </p>
+  <p class="muted">Code {{ location.short_code }}</p>
+</section>
+
+{% if not location.is_system %}
+<p class="links">
+  <a href="/l/{{ location.short_code }}/edit">Rename or move</a> ·
+  <a href="/l/{{ location.short_code }}/delete">Delete</a>
+</p>
+{% endif %}
+{% endblock %}

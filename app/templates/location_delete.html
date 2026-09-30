@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Delete {{ location.name }} · Inventory{% endblock %}
+{% block content %}
+<h1>Delete “{{ location.name }}”?</h1>
+<ul id="delete-counts">
+  <li><strong>{{ counts.child_locations }}</strong> location{{ "s" if counts.child_locations != 1 }} inside will move to
+    {{ parent.name if parent else "the top level" }} (their tags keep working).</li>
+  <li><strong>{{ counts.direct_items }}</strong> item{{ "s" if counts.direct_items != 1 }} directly here will move to
+    {{ parent.name if parent else inbox.name }}.</li>
+</ul>
+<p>Its own tag will show “This location was removed”.</p>
+<form method="post" action="/l/{{ location.short_code }}/delete" class="row">
+  <button type="submit" class="danger">Delete location</button>
+  <a class="button secondary" href="/l/{{ location.short_code }}">Cancel</a>
+</form>
+{% endblock %}

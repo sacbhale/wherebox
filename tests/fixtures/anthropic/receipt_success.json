@@ -1,0 +1,25 @@
+{
+  "id": "msg_01Receipt",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5-5",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_01Receipt",
+      "name": "record_items",
+      "input": {
+        "items": [
+          {"name": "Milk 1L", "quantity": 2, "category": "Food", "kind": "consumable",
+           "confidence": 0.9, "price_cents": 258},
+          {"name": "AA batteries 8-pack", "quantity": 1, "category": "Electronics",
+           "kind": "consumable", "confidence": 0.85, "price_cents": 699}
+        ],
+        "receipt": {"merchant": "Corner Grocery", "purchase_date": "2026-09-14"}
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 1500, "output_tokens": 90}
+}

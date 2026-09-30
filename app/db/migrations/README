@@ -1,0 +1,41 @@
+Database migrations
+===================
+
+Files named NNNN_description.sql are applied in filename order by app/db/migrate.py.
+Each file runs in its own BEGIN IMMEDIATE transaction and is recorded in
+schema_migrations (version = file stem). After the SQL files, the Python
+post-migration hooks in migrate.POST_MIGRATION_HOOKS run on every start; they
+must be idempotent (e.g. ensure_inbox() creates the Inbox location only if missing).
+
+Rules
+-----
+
+1. Never edit a migration that has shipped. Add a new file instead.
+
+2. Never rebuild or drop the `locations` table. No "create new table, copy,
+   drop, rename" sequences, no DROP TABLE, no table-rebuilding tools. A rebuild
+   silently drops the short-code triggers (locations_code_immutable,
+   locations_no_delete) and can re-issue codes that are printed on QR/NFC tags.
+   The only allowed schema change on `locations` is:
+
+       ALTER TABLE locations ADD COLUMN ...;
+
+   tests/integration/test_migrations.py asserts that both triggers exist in
+   sqlite_master after the latest migration and that existing codes are unchanged.
+
+3. Never use REPLACE / INSERT OR REPLACE / UPDATE OR REPLACE against
+   `locations` anywhere in app/ (a grep test enforces this). Use soft delete
+   (deleted_at) instead of DELETE.
+
+4. Do not add FTS triggers; items_fts is maintained by search.reindex_items().
+
+Manual database surgery
+-----------------------
+
+PRAGMA recursive_triggers is a per-connection setting. app/db/connection.py
+turns it on for every app connection, which is what makes the conflict-delete
+performed by REPLACE fire locations_no_delete. An external `sqlite3` shell does
+NOT set it, so a REPLACE issued there bypasses the delete protection and can
+destroy a location code. If you must edit the database by hand, stop the
+container first, run `PRAGMA recursive_triggers=ON;` at the start of the
+session, and never use REPLACE on `locations`.

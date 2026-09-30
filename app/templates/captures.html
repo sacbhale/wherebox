@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Captures · Inventory{% endblock %}
+{% block content %}
+<h1>Captures</h1>
+{% if captures %}
+<ul class="captures" id="capture-list">
+  {% for row in captures %}
+  <li>
+    <span class="muted">{{ row.created_at[:16] | replace("T", " ") }} UTC{% if row.location_name %} · {{ row.location_name }}{% endif %}{% if row.input_text %} · “{{ row.input_text | truncate(60) }}”{% endif %}</span>
+    {% with capture = row, position = positions.get(row.id, 0), outcome = outcomes.get(row.id, []) %}{% include "partials/capture_status.html" %}{% endwith %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No captures yet. Take a photo from a location page or from home.</p>
+{% endif %}
+{% endblock %}

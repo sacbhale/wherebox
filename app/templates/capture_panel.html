@@ -1,0 +1,72 @@
+{# Capture forms, loaded into the location page and home. Error answers (4xx) carry a message
+   partial, so the forms swap them in too. #}
+{% set swap_errors = "if(event.detail.xhr.status<500){event.detail.shouldSwap=true;event.detail.isError=false}" %}
+{% set reset_on_success = "if(event.detail.successful){this.reset()}" %}
+<section class="panel capture" id="capture">
+  <h2>Capture</h2>
+  {% if blocked %}<p class="error" id="capture-blocked" role="alert">{{ blocked }} <a href="/items/new{% if location %}?loc={{ location.id }}{% endif %}">Add an item manually</a></p>{% endif %}
+
+  <form class="capture-form" id="capture-photo" hx-post="/captures/photo" hx-encoding="multipart/form-data"
+        hx-target="#capture-results" hx-swap="afterbegin"
+        hx-trigger="submit, change from:find input[type=file]"
+        hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
+    {% if location %}
+    <input type="hidden" name="location_id" value="{{ location.id }}">
+    {% else %}
+    <label>Location
+      <select name="location_id" {% if blocked %}disabled{% endif %}>
+        {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == default_id %}selected{% endif %}>{{ loc.path }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Photo of a shelf, drawer or box
+      <input type="file" name="photo" accept="image/*" capture="environment" id="capture-photo-input" {% if blocked %}disabled{% endif %}>
+    </label>
+    <button type="submit" {% if blocked %}disabled{% endif %}>Add from photo</button>
+  </form>
+
+  {% if location %}
+  <form class="capture-form" id="capture-reconcile" hx-post="/captures/reconcile" hx-encoding="multipart/form-data"
+        hx-target="#capture-results" hx-swap="afterbegin"
+        hx-trigger="submit, change from:find input[type=file]"
+        hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
+    <input type="hidden" name="location_id" value="{{ location.id }}">
+    <label>Reconcile: photo of everything in {{ location.name }} (new items are added, changes go to Review)
+      <input type="file" name="photo" accept="image/*" capture="environment" id="capture-reconcile-input" {% if blocked %}disabled{% endif %}>
+    </label>
+    <button type="submit" {% if blocked %}disabled{% endif %}>Reconcile from photo</button>
+  </form>
+  {% endif %}
+
+  {% if not location %}
+  <form class="capture-form" id="capture-receipt" hx-post="/captures/receipt" hx-encoding="multipart/form-data"
+        hx-target="#capture-results" hx-swap="afterbegin"
+        hx-trigger="submit, change from:find input[type=file]"
+        hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
+    <label>Receipt (photo or PDF, items go to the Inbox)
+      <input type="file" name="receipt" accept="image/*,application/pdf" {% if blocked %}disabled{% endif %}>
+    </label>
+    <button type="submit" {% if blocked %}disabled{% endif %}>Add from receipt</button>
+  </form>
+  {% endif %}
+
+  <form class="capture-form" id="capture-text" hx-post="/captures/text"
+        hx-target="#capture-results" hx-swap="afterbegin"
+        hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
+    {% if location %}<input type="hidden" name="location_id" value="{{ location.id }}">{% endif %}
+    <label for="capture-text-input">Or type (or say) what you have</label>
+    <textarea name="text" id="capture-text-input" rows="2" maxlength="2000" {% if blocked %}disabled{% endif %}
+              placeholder="{% if location %}2 cartons of milk and a box of screws{% else %}2 cartons of milk, and the drill is in the Garage{% endif %}"></textarea>
+    {# Speech is recognised by the browser; only the resulting text is posted (AC-19). #}
+    <button type="button" class="secondary" id="voice-mic" data-voice-target="#capture-text-input"
+            data-voice-status="#voice-status" aria-pressed="false" hidden {% if blocked %}disabled{% endif %}>Speak</button>
+    <span id="voice-status" class="muted" aria-live="polite"></span>
+    <button type="submit" {% if blocked %}disabled{% endif %}>Add from text</button>
+  </form>
+  <script src="/static/voice.js" defer></script>
+
+  <div id="capture-results" aria-live="polite">
+    {% for capture in active %}{% with position = positions[capture.id], outcome = [] %}{% include "partials/capture_status.html" %}{% endwith %}{% endfor %}
+  </div>
+  <p class="links"><a href="/captures">Recent captures</a></p>
+</section>

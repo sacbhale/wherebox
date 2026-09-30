@@ -1,0 +1,29 @@
+<div class="sheet-backdrop" data-close-sheet></div>
+<div class="sheet" id="action-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"
+     data-item-id="{{ item.id }}">
+  <div class="sheet-head">
+    <h2 id="sheet-title">{{ item.name }}</h2>
+    <button type="button" class="link" data-close-sheet aria-label="Close">✕</button>
+  </div>
+  <p class="muted">In {{ item.location_path }} · quantity {{ item.quantity }}</p>
+  <button type="button" id="sheet-used-up" class="danger" data-sheet-action
+          hx-post="/items/{{ item.id }}/used-up"
+          hx-target="#item-{{ item.id }}" hx-swap="outerHTML">Used up</button>
+
+  <h3>Move to</h3>
+  <ul class="move-targets" id="move-targets">
+    {% for loc in targets %}{% include "partials/move_target_button.html" %}{% endfor %}
+  </ul>
+  <input type="search" id="move-search" name="q" placeholder="Search locations…"
+         aria-label="Search locations to move {{ item.name }} to" autocomplete="off"
+         hx-get="/items/{{ item.id }}/move-targets" hx-trigger="input changed delay:250ms, search"
+         hx-target="#move-search-results" hx-sync="this:replace">
+  <ul class="move-targets" id="move-search-results" aria-live="polite"></ul>
+
+  <div class="sheet-foot">
+    <button type="button" id="sheet-scan" class="secondary"
+            hx-post="/items/{{ item.id }}/pending-move"
+            hx-target="#sheet" hx-swap="innerHTML">Scan destination tag</button>
+    <a id="sheet-edit" class="button secondary" href="/items/{{ item.id }}/edit">Edit</a>
+  </div>
+</div>

@@ -1,0 +1,16 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data and local config
+data/
+.env
+docker-compose.override.yml
+
+# OMC working state (plans/specs are kept; runtime state is not)
+.omc/*
+!.omc/plans/
+!.omc/specs/

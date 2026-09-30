@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Set up · Inventory{% endblock %}
+{% block content %}
+<h1>Set the household password</h1>
+<p>Enter the one-time setup token printed in the container logs (<code>docker compose logs</code>).</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/setup" class="stack">
+  <label for="token">Setup token</label>
+  <input id="token" name="token" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+  <label for="password">New password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" required>
+  <label for="confirm">Repeat password</label>
+  <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+  <button type="submit">Save password</button>
+</form>
+{% endblock %}

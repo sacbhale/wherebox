@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Label · {{ location.name }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="label-page">
+  <div class="label">
+    {{ qr_svg|safe }}
+    <p class="label-name">{{ location.name }}</p>
+    <p class="label-path">{{ path }}</p>
+    <p class="label-url">{{ url }}</p>
+  </div>
+  <p class="no-print"><button type="button" data-print>Print</button>
+    <a href="/l/{{ location.short_code }}">Back</a></p>
+</body>
+</html>

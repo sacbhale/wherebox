@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ "Reconcile" if reconcile else "Capture" }} · {{ location.name }} · Inventory{% endblock %}
+{% block capture_href %}#capture{% endblock %}
+{% block content %}
+<nav class="breadcrumb" aria-label="Breadcrumb"><a href="/l/{{ location.short_code }}">Back to {{ location.name }}</a></nav>
+{% if reconcile %}
+<h1>Reconcile {{ location.name }}</h1>
+<p class="muted">Take one photo of everything in {{ location.name }}. New items are added right away; missing items and changed counts wait for you in <a href="/review">Review</a>.</p>
+{% else %}
+<h1>Capture into {{ location.name }}</h1>
+{% endif %}
+{% include "capture_panel.html" %}
+{% endblock %}

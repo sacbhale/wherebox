@@ -1,0 +1,3 @@
+<li><button type="button" class="secondary move-target" data-sheet-action data-location-id="{{ loc.id }}"
+            hx-post="/items/{{ item.id }}/move" hx-vals='{"location_id": "{{ loc.id }}"}'
+            hx-target="#item-{{ item.id }}" hx-swap="outerHTML">{{ loc.path }}</button></li>

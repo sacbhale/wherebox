@@ -1,0 +1,21 @@
+{
+  "id": "msg_01Invalid",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5-5",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_01Invalid",
+      "name": "record_items",
+      "input": {
+        "items": [
+          {"name": "Milk", "quantity": 0, "kind": "food", "confidence": 1.7}
+        ]
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 900, "output_tokens": 40}
+}

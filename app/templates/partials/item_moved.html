@@ -1,0 +1,6 @@
+<li class="item toast moved" id="item-{{ item.id }}" data-item-id="{{ item.id }}" role="status">
+  <span>Moved {{ item.name }} to <a href="/l/{{ item.location_code }}">{{ item.location_path }}</a></span>
+  <button type="button" class="undo" hx-post="/items/{{ item.id }}/move"
+          hx-vals='{"location_id": "{{ previous_id }}", "undo": "1"}'
+          hx-target="#item-{{ item.id }}" hx-swap="outerHTML">Undo</button>
+</li>
