@@ -69,6 +69,54 @@
     }
   });
 
+  // Location tree: remember which nodes are open, per viewer. Storage may be unavailable
+  // (private mode, blocked site data); the tree then just starts collapsed.
+  var TREE_KEY = "inventory.openLocations";
+
+  function openLocations() {
+    try {
+      var ids = JSON.parse(localStorage.getItem(TREE_KEY) || "[]");
+      return Array.isArray(ids) ? ids.map(String) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveOpenLocations(ids) {
+    try { localStorage.setItem(TREE_KEY, JSON.stringify(ids)); } catch (e) { /* no storage */ }
+  }
+
+  // Reopen remembered nodes, and drop remembered ids that are no longer in the tree (deleted
+  // locations), in a single write.
+  function restoreTree() {
+    var tree = document.getElementById("location-tree");
+    if (!tree) return;
+    var open = openLocations();
+    if (!open.length) return;
+    var kept = [];
+    tree.querySelectorAll("details.tree-branch[data-location-id]").forEach(function (node) {
+      var id = node.getAttribute("data-location-id");
+      if (open.indexOf(id) === -1) return;
+      node.open = true;
+      kept.push(id);
+    });
+    if (kept.length !== open.length) saveOpenLocations(kept);
+  }
+
+  // "toggle" does not bubble; listen in the capture phase. Restoring fires toggles too; those
+  // match what is stored, so they write nothing.
+  document.addEventListener("toggle", function (event) {
+    var node = event.target;
+    if (!node.matches || !node.matches("details.tree-branch[data-location-id]")) return;
+    var id = node.getAttribute("data-location-id");
+    var open = openLocations();
+    var stored = open.indexOf(id) !== -1;
+    if (node.open === stored) return;
+    saveOpenLocations(node.open ? open.concat(id) : open.filter(function (o) { return o !== id; }));
+  }, true);
+
+  restoreTree();
+
   // Move focus into a freshly opened sheet (keyboard and screen-reader users).
   document.addEventListener("htmx:afterSwap", function (event) {
     if (!event.detail.target || event.detail.target.id !== "sheet") return;

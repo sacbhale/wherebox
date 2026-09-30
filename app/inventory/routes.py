@@ -125,7 +125,7 @@ def home(request: Request, conn: Conn) -> Response:
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"roots": locations.children(conn, None), "review_count": review_count},
+        {"tree": locations.tree(conn), "review_count": review_count},
     )
 
 

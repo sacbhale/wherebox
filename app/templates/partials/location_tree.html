@@ -1,0 +1,22 @@
+{# The home page location tree. A node with sub-locations is a native <details>: its
+   <summary> is the chevron (toggles in place, no JS needed) and sits next to, not around,
+   the name link, so tapping the name always navigates. app.js remembers open nodes. #}
+{% macro location_tree(nodes) %}
+{% for node in nodes %}
+<li class="tree-node">
+  <div class="tree-row">
+    <a class="tree-link" href="/l/{{ node.short_code }}">{{ node.name }}</a>
+    <span class="muted">{{ node.item_count }} item{{ "s" if node.item_count != 1 }}
+      {%- if node.sub_count %}<span class="tree-subcount"> · {{ node.sub_count }} sub-location{{ "s" if node.sub_count != 1 }}</span>{% endif %}</span>
+  </div>
+  {% if node.children %}
+  <details class="tree-branch" data-location-id="{{ node.id }}">
+    <summary class="tree-toggle" id="toggle-{{ node.id }}" aria-label="{{ node.name }} sub-locations"><span class="chevron" aria-hidden="true"></span></summary>
+    <ul>
+      {{ location_tree(node.children) }}
+    </ul>
+  </details>
+  {% endif %}
+</li>
+{% endfor %}
+{% endmacro %}

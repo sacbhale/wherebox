@@ -5,7 +5,7 @@ The system Inbox (``is_system = 1``) cannot be renamed, moved or deleted.
 """
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from app.db.connection import write_tx
@@ -60,6 +60,63 @@ def children(conn: sqlite3.Connection, location_id: int | None) -> list[sqlite3.
         "ORDER BY l.is_system DESC, l.name COLLATE NOCASE",
         (location_id,),
     ).fetchall()
+
+
+# The home tree nests at most this deep; deeper sub-locations are reached from the deepest
+# node's own page. Bounds the recursive template, which would otherwise hit Python's recursion
+# limit (and 500 the home page) on a chain a few hundred levels deep.
+TREE_MAX_DEPTH = 12
+
+
+@dataclass
+class TreeNode:
+    """A live location in the home page tree, with its live direct item count."""
+
+    id: int
+    short_code: str
+    name: str
+    is_system: bool
+    item_count: int
+    sub_count: int  # live direct sub-locations, including any cut off by TREE_MAX_DEPTH
+    children: list["TreeNode"] = field(default_factory=list)
+
+
+def tree(conn: sqlite3.Connection) -> list[TreeNode]:
+    """Every live location as nested nodes (roots first), in one query. Siblings are ordered
+    like ``children``: the Inbox first, then by name.
+
+    Built by walking down from the roots, so rows that can't reach a root (a parent cycle from
+    manual DB edits) are left out rather than looping; a self-parented row counts as a root."""
+    rows = conn.execute(
+        "SELECT l.id, l.parent_id, l.short_code, l.name, l.is_system, "
+        "count(i.id) AS item_count FROM locations l "
+        "LEFT JOIN items i ON i.location_id = l.id AND i.deleted_at IS NULL "
+        "WHERE l.deleted_at IS NULL GROUP BY l.id "
+        "ORDER BY l.is_system DESC, l.name COLLATE NOCASE"
+    ).fetchall()
+    live = {row["id"] for row in rows}
+    kids: dict[int | None, list[sqlite3.Row]] = {}
+    for row in rows:
+        parent_id = row["parent_id"]
+        if parent_id not in live or parent_id == row["id"]:
+            parent_id = None
+        kids.setdefault(parent_id, []).append(row)
+
+    def build(row: sqlite3.Row, depth: int) -> TreeNode:
+        sub = kids.get(row["id"], [])
+        node = TreeNode(
+            row["id"],
+            row["short_code"],
+            row["name"],
+            bool(row["is_system"]),
+            row["item_count"],
+            len(sub),
+        )
+        if depth < TREE_MAX_DEPTH:
+            node.children = [build(child, depth + 1) for child in sub]
+        return node
+
+    return [build(row, 1) for row in kids.get(None, [])]
 
 
 def ancestors(conn: sqlite3.Connection, location_id: int) -> list[sqlite3.Row]:

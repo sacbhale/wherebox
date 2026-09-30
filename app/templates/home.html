@@ -16,11 +16,9 @@
 {% endif %}
 
 <h2>Locations</h2>
-<ul class="locations">
-  {% for loc in roots %}
-  <li><a href="/l/{{ loc.short_code }}">{{ loc.name }}</a>
-    <span class="muted">{{ loc.item_count }} item{{ "s" if loc.item_count != 1 }}</span></li>
-  {% endfor %}
+{% from "partials/location_tree.html" import location_tree %}
+<ul class="location-tree" id="location-tree">
+  {{ location_tree(tree) }}
 </ul>
 
 <form class="row" method="post" action="/locations">

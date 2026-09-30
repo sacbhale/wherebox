@@ -7,6 +7,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 SHELF = Path(__file__).resolve().parents[1] / "fixtures" / "shelf.jpg"
+VIEWPORT_WIDTH = 390
 VIEWPORT_HEIGHT = 844
 THUMB_ZONE_TOP = 0.4 * VIEWPORT_HEIGHT  # the bottom 60% of the screen
 MIN_TARGET = 43.5  # 44px, allowing for sub-pixel rounding
@@ -263,3 +264,91 @@ def test_review_queue_actions_remove_rows(server, page: Page, tap):
     assert rows[hammer]["quantity"] == 5
     assert rows[rope]["deleted_at"] is not None
     assert rows[tent]["deleted_at"] is None
+
+
+# ---------------------------------------------------------------- home location tree
+
+
+def toggle(location_id: int) -> str:
+    return f"#toggle-{location_id}"
+
+
+def branch(page: Page, location_id: int):
+    return page.locator(f"details.tree-branch[data-location-id='{location_id}']")
+
+
+def wait_saved(page: Page, location_id: int, is_open: bool) -> None:
+    """The async "toggle" event has stored the node's state (before a reload)."""
+    page.wait_for_function(
+        """([id, open]) => JSON.parse(localStorage.getItem("inventory.openLocations") || "[]")
+                             .includes(id) === open""",
+        arg=[str(location_id), is_open],
+    )
+
+
+@pytest.fixture
+def tree(server, page: Page):
+    """Garage > Shelf 1 / Shelf 2 > Blue box, and Kitchen. Opens home logged in."""
+    garage_id, garage = server.create_location("Garage")
+    server.create_location("Shelf 1", garage_id)
+    shelf2_id, _ = server.create_location("Shelf 2", garage_id)
+    _, blue = server.create_location("Blue box", shelf2_id)
+    server.create_location("Kitchen")
+    server.login(page, "/")
+    return {"garage_id": garage_id, "garage": garage, "shelf2_id": shelf2_id, "blue": blue}
+
+
+def test_tree_reaches_nested_location_in_three_taps(server, page: Page, tree, tap):
+    blue_link = page.locator(f".tree-link[href='/l/{tree['blue']}']")
+    expect(blue_link).to_be_hidden()
+    tap(page.locator(toggle(tree["garage_id"])))
+    expect(branch(page, tree["garage_id"])).to_have_attribute("open", "")
+    tap(page.locator(toggle(tree["shelf2_id"])))
+    expect(blue_link).to_be_visible()
+    tap(blue_link)
+    page.wait_for_url(server.url(f"/l/{tree['blue']}"))
+    expect(page.locator("h1")).to_contain_text("Blue box")
+    assert tap.count == 3  # 2 expands + 1 tap
+
+
+def test_tree_name_navigates_and_open_state_survives_reload(server, page: Page, tree):
+    # Tapping a collapsed parent's name navigates; it does not toggle.
+    page.locator(f".tree-link[href='/l/{tree['garage']}']").tap()
+    page.wait_for_url(server.url(f"/l/{tree['garage']}"))
+
+    page.goto(server.url("/"))
+    expect(branch(page, tree["garage_id"])).not_to_have_attribute("open", "")
+    page.locator(toggle(tree["garage_id"])).tap()
+    expect(branch(page, tree["garage_id"])).to_have_attribute("open", "")
+    wait_saved(page, tree["garage_id"], True)
+    page.reload()
+    expect(branch(page, tree["garage_id"])).to_have_attribute("open", "")
+    expect(branch(page, tree["shelf2_id"])).not_to_have_attribute("open", "")
+    # Collapsing is remembered too.
+    page.locator(toggle(tree["garage_id"])).tap()
+    expect(branch(page, tree["garage_id"])).not_to_have_attribute("open", "")
+    wait_saved(page, tree["garage_id"], False)
+    page.reload()
+    expect(branch(page, tree["garage_id"])).not_to_have_attribute("open", "")
+
+
+def test_deep_tree_fits_phone_with_touch_targets(server, page: Page):
+    ids, parent = [], None
+    for depth in range(1, 9):
+        parent, _ = server.create_location(
+            f"Level {depth} storage cabinet with a rather long descriptive name", parent
+        )
+        ids.append(parent)
+    _, code = server.create_location("Leaf", parent)
+    server.login(page, "/")
+    for location_id in ids:
+        page.locator(toggle(location_id)).tap()
+        expect(branch(page, location_id)).to_have_attribute("open", "")
+    deepest = page.locator(f".tree-link[href='/l/{code}']")
+    expect(deepest).to_be_visible()
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
+    box = deepest.bounding_box()
+    assert box["x"] + box["width"] <= VIEWPORT_WIDTH
+    assert_touch_targets(page)
