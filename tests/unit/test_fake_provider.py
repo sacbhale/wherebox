@@ -6,10 +6,11 @@ from pathlib import Path
 import pytest
 
 from app.ai import registry
-from app.ai.fake import FakeProvider, FakeStep, load_script
+from app.ai.fake import RATE_LIMITED_MESSAGE, FakeProvider, FakeStep, load_script, parse_step
 from app.ai.provider import (
     ProviderInvalidOutput,
     ProviderPermanentError,
+    ProviderRateLimited,
     ProviderTimeoutError,
     ProviderTransientError,
 )
@@ -199,3 +200,50 @@ def test_registry_unknown_provider(make_settings: SettingsFactory) -> None:
     settings = make_settings().model_copy(update={"ai_provider": "ollama"})
     with pytest.raises(registry.UnknownProviderError):
         registry.get_provider(settings)
+
+
+def test_per_model_scripts_and_views() -> None:
+    fake = FakeProvider([_result(1)], models={"test/model-b": [_result(2)]}, repeat_last=True)
+    b = fake.with_model("test/model-b")
+    other = fake.with_model("test/unknown")
+    assert (fake.model, b.model, other.model) == ("fake-model", "test/model-b", "test/unknown")
+    assert b.extract(ExtractRequest(mode="shelf")).usage.input_tokens == 2
+    assert other.extract(ExtractRequest(mode="shelf")).usage.input_tokens == 1  # top-level
+    assert fake.extract(ExtractRequest(mode="shelf")).usage.input_tokens == 1
+    assert len(fake.requests) == len(b.requests) == 3  # one shared request log
+
+
+def test_load_script_models_map(tmp_path: Path) -> None:
+    step = {"result": {"items": [], "usage": {"input_tokens": 5, "output_tokens": 1}}}
+    other = {"result": {"items": [], "usage": {"input_tokens": 9, "output_tokens": 1}}}
+    path = tmp_path / "script.json"
+    path.write_text(json.dumps({"steps": [step], "models": {"test/model-a": {"steps": [other]}}}))
+    fake = load_script(path)
+    a = fake.with_model("test/model-a")
+    assert a.remaining == 1 and fake.remaining == 1
+    assert a.extract(ExtractRequest(mode="shelf")).usage.input_tokens == 9
+    with pytest.raises(ProviderPermanentError, match="exhausted"):
+        a.extract(ExtractRequest(mode="shelf"))
+    assert fake.with_model("test/model-z").extract(ExtractRequest(mode="shelf")).usage == Usage(
+        input_tokens=5, output_tokens=1
+    )
+
+
+@pytest.mark.parametrize(
+    "models", ["nope", {"x/y": {"steps": "nope"}}, {"x/y": [{"result": {"items": []}}]}]
+)
+def test_load_script_rejects_malformed_models(tmp_path: Path, models: object) -> None:
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps({"steps": [], "models": models}))
+    with pytest.raises(ValueError):
+        load_script(path)
+
+
+def test_rate_limited_and_retry_after_steps() -> None:
+    limited = parse_step({"error": "rate_limited", "retry_after_s": 7}).outcome
+    assert type(limited) is ProviderRateLimited
+    assert limited.retry_after == 7.0 and str(limited) == RATE_LIMITED_MESSAGE
+    plain = parse_step({"error": "rate_limited"}).outcome
+    assert isinstance(plain, ProviderRateLimited) and plain.retry_after is None
+    busy = parse_step({"error": "transient", "message": "HTTP 503", "retry_after_s": 3}).outcome
+    assert type(busy) is ProviderTransientError and busy.retry_after == 3.0

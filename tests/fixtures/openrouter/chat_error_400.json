@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": 400,
+    "message": "Provider returned error",
+    "metadata": {
+      "error_type": "invalid_request",
+      "provider_name": "Google",
+      "raw": "Request contains an invalid argument."
+    }
+  }
+}

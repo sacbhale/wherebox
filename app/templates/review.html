@@ -4,6 +4,11 @@
 {# Each action is one hx-post; the empty answer replaces (removes) the row (AC-7). #}
 {% set row_swap = 'hx-target="closest .review-row" hx-swap="outerHTML"' %}
 {% macro thumb(row) %}{% if row.photo_path and row.photo_path.lower().endswith(thumbnail_suffixes) %}<img class="review-thumb" src="/photos/{{ row.photo_id }}" alt="" loading="lazy" width="56" height="56">{% endif %}{% endmacro %}
+{# A crop of the item's first box: the display photo as a background, sized and positioned
+   from the box (numbers only); tapping opens the capture with the item highlighted. #}
+{% macro crop_link(row, crop) %}<a class="review-crop" id="review-crop-{{ row.id }}" href="/captures/{{ crop.root_capture_id }}?item={{ row.id }}"
+  style="background-image:url('{{ crop.url }}');background-size:{{ crop.background_size }};background-position:{{ crop.background_position }}"
+  aria-label="Where {{ row.name }} was seen"></a>{% endmacro %}
 {% macro item_label(row) %}<a href="/items/{{ row.id }}/edit">{{ row.name }}</a> <span class="muted">in <a href="/l/{{ row.location_code }}">{{ row.location_name }}</a></span>{% endmacro %}
 <h1>Review</h1>
 {% if not (failed or flagged or missing or quantity) %}<p class="muted" id="review-empty">Nothing to review.</p>{% endif %}
@@ -17,8 +22,10 @@
       <div><strong>{{ capture.type|capitalize }}</strong>{% if capture.location_name %} <span class="muted">for {{ capture.location_name }}</span>{% endif %}
         <div class="error">{{ capture.error or "unknown error" }}</div></div>
       <div class="review-actions">
-        <button type="button" class="review-retry" hx-post="/review/captures/{{ capture.id }}/retry" {{ row_swap|safe }}>Retry</button>
+        <button type="button" class="review-retry" hx-post="/review/captures/{{ capture.id }}/retry" {{ row_swap|safe }}
+                data-show-errors data-error-target="#review-capture-{{ capture.id }}-message">Retry</button>
       </div>
+      <div class="form-message" id="review-capture-{{ capture.id }}-message" data-form-message></div>
     </li>
     {% endfor %}
   </ul>
@@ -31,7 +38,7 @@
   <ul class="review-list">
     {% for row in flagged %}
     <li class="review-row" id="review-item-{{ row.id }}" data-item-id="{{ row.id }}">
-      {{ thumb(row) }}
+      {% if crops[row.id] %}{{ crop_link(row, crops[row.id]) }}{% else %}{{ thumb(row) }}{% endif %}
       <div>{{ item_label(row) }} <span class="muted">× {{ row.quantity }}{% if row.confidence is not none %} · {{ (row.confidence * 100)|round|int }}% sure{% endif %}</span></div>
       <div class="review-actions">
         <button type="button" class="review-keep" hx-post="/review/items/{{ row.id }}/keep" {{ row_swap|safe }}>Keep</button>

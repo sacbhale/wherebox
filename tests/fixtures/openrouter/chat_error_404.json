@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": 404,
+    "message": "No allowed providers are available for the selected model.",
+    "metadata": {
+      "error_type": "not_found"
+    }
+  }
+}

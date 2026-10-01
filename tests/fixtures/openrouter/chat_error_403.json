@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": 403,
+    "message": "Request blocked: prompt injection patterns detected",
+    "metadata": {
+      "error_type": "permission_denied"
+    }
+  }
+}

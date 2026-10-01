@@ -1,0 +1,62 @@
+{# The annotated gallery (spec-multiphoto Part 5, R14): one component, imported where photos
+   with boxes are shown. Frames come from app/capture/gallery.py (styles are numbers only).
+   Boxes are decorative (aria-hidden); the list rows are the accessible controls
+   (<button aria-pressed>) and share the boxes' data-key. All ids start with ``prefix``
+   (built from the capture or case id), so several galleries can share a page. The click
+   handling lives in app.js (event delegation, so htmx swaps need no re-binding). #}
+
+{% macro strip(prefix, frames, label="Photos", focusable=True) %}
+<div class="gallery-strip" id="{{ prefix }}-photos" role="group" aria-label="{{ label }}"{% if focusable %} tabindex="0"{% endif %}>
+  {% for frame in frames %}
+  <figure class="gallery-frame" id="{{ prefix }}-photo-{{ frame.photo_id }}">
+    <div class="gallery-image" style="{{ frame.ratio_style }}">
+      <img src="{{ frame.url }}" alt="Photo {{ loop.index }} of {{ frames|length }}" loading="lazy"
+           {% if frame.width and frame.height %}width="{{ frame.width }}" height="{{ frame.height }}"{% endif %}>
+      {% for m in frame.marks %}<span class="box{% if m.active %} is-active{% endif %}" data-key="{{ m.key }}"
+        {%- if m.model is not none %} data-model="{{ m.model }}"{% if m.model != 0 %} hidden{% endif %}{% endif %}
+        style="{{ m.style }}" aria-hidden="true">{% if m.number %}<span class="box-label {{ m.label_class }}">{{ m.number }}</span>{% endif %}</span>{% endfor %}
+    </div>
+    {% if frames|length > 1 %}<figcaption class="muted">{{ loop.index }} / {{ frames|length }}</figcaption>{% endif %}
+  </figure>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro item_state(entry) -%}
+{%- if entry.state == "used_up" %} · used up
+{%- elif entry.state == "moved" %} · moved to {{ entry.location_name }}
+{%- elif entry.needs_review %} · to review{% endif -%}
+{%- endmacro %}
+
+{# A capture group's photos and items. ``highlight``: an item id to start highlighted. #}
+{% macro group_gallery(prefix, group, highlight=None) %}
+{% set frames = group_frames(group, highlight) %}
+{% set active = group.item(highlight) if highlight else None %}
+<div class="gallery{% if active and active.marked %} has-active{% endif %}" id="{{ prefix }}" data-gallery
+     {%- if active and active.marked %} data-scroll-active{% endif %}>
+  {% if frames %}{{ strip(prefix, frames, "Photos of this capture") }}{% endif %}
+  {% if group.items %}
+  <ul class="gallery-items" id="{{ prefix }}-items">
+    {% for entry in group.items %}
+    <li class="gallery-item state-{{ entry.state }}" id="{{ prefix }}-item-{{ entry.id }}">
+      {% if entry.marked %}
+      <button type="button" class="gallery-row" data-gallery-row data-key="{{ entry.id }}"
+              aria-pressed="{{ 'true' if entry.id == highlight else 'false' }}">
+        <span class="gallery-num">{{ entry.number }}</span>
+        <span class="gallery-name">{{ entry.name }} <span class="gallery-meta">× {{ entry.quantity }}{{ item_state(entry) }}</span></span>
+      </button>
+      {% else %}
+      <div class="gallery-row unmarked">
+        <span class="gallery-num" aria-hidden="true">–</span>
+        <span class="gallery-name">{{ entry.name }} <span class="gallery-meta">× {{ entry.quantity }} · not marked{{ item_state(entry) }}</span></span>
+      </div>
+      {% endif %}
+      {% if entry.state != "used_up" %}<a class="gallery-edit" href="/items/{{ entry.id }}/edit" aria-label="Edit {{ entry.name }}">Edit</a>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No items.</p>
+  {% endif %}
+</div>
+{% endmacro %}

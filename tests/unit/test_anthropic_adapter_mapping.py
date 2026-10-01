@@ -9,6 +9,7 @@ import pytest
 from app.ai.provider import (
     ProviderInvalidOutput,
     ProviderPermanentError,
+    ProviderRateLimited,
     ProviderTimeoutError,
     ProviderTransientError,
     ledger_outcome,
@@ -16,6 +17,7 @@ from app.ai.provider import (
 from app.ai.schemas import TOOL_INPUT_SCHEMA, TOOL_NAME, ExistingItem, ExtractRequest, Usage
 from tests.unit.anthropic_mock import (
     build_mock_anthropic,
+    recorded,
     reply_connect_error,
     reply_json,
     reply_timeout,
@@ -97,6 +99,23 @@ def test_retryable_statuses_map_to_transient(status: int) -> None:
     assert str(status) in str(info.value)
     assert ledger_outcome(info.value) == "transient_error"
     assert len(mock.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "kind"), [(429, ProviderRateLimited), (529, ProviderTransientError)]
+)
+def test_retry_after_header_is_carried(status: int, kind: type) -> None:
+    def reply(request: httpx2.Request) -> httpx2.Response:
+        body = recorded(f"error_{status}")
+        return httpx2.Response(status, json=body, headers={"retry-after": "12"})
+
+    with pytest.raises(kind) as info:
+        build_mock_anthropic(reply).provider.extract(ExtractRequest(mode="shelf", images=[JPEG]))
+    assert type(info.value) is kind and info.value.retry_after == 12
+    without = build_mock_anthropic(reply_json(status, f"error_{status}"))
+    with pytest.raises(kind) as info:
+        without.provider.extract(ExtractRequest(mode="shelf", images=[JPEG]))
+    assert info.value.retry_after is None
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404])

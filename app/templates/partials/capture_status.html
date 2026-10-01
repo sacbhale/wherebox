@@ -1,11 +1,25 @@
 {# One capture's status. Unfinished captures poll every 2s; the endpoint answers 286 (stop
    polling) with this partial once the capture is done or failed.
-   Context: capture, position, outcome, now. #}
+   Context: capture, position, outcome, now; optional:
+   - view: "panel" (default; the capture panel: a finished photo/reconcile capture shows its
+     annotated gallery), "list" (/captures: "N photos · View" instead) or "group" (on the
+     group page /captures/{root}: the root's status, or an extension started there; when
+     it finishes, the endpoint's answer refreshes the page's gallery, meta line and tray
+     limit out of band). Polling and Retry keep the view (?in=...).
+   - group: the capture's group (panel gallery, group refresh); extension: (new, known);
+     oob: true in the endpoint's answers (out-of-band parts are never rendered into a page).
+   Only the summary is a live region (role="status"); the gallery stays out of it, so a
+   screen reader announces the outcome, not every item. #}
+{% from "partials/gallery.html" import group_gallery %}
+{% from "partials/group_parts.html" import group_meta, group_section, extend_section %}
+{% set view = view if view is defined and view else "panel" %}
+{% set query = "" if view == "panel" else "?in=" ~ view %}
 {% set labels = {"photo": "Photo", "receipt": "Receipt", "text": "Text", "reconcile": "Reconcile"} %}
-<div class="capture-status status-{{ capture.status }}" id="capture-{{ capture.id }}" role="status"
+<div class="capture-status status-{{ capture.status }}" id="capture-{{ capture.id }}"
      data-capture-status="{{ capture.status }}"
-     {% if capture.status in ("queued", "processing") %}hx-get="/captures/{{ capture.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
-  <strong>{{ labels[capture.type] }}</strong>
+     {% if capture.status in ("queued", "processing") %}hx-get="/captures/{{ capture.id }}/status{{ query }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="capture-summary" role="status">
+  <strong>{{ "Another angle" if capture.parent_capture_id else labels[capture.type] }}</strong>
   {% if capture.status == "queued" %}
     {% if capture.not_before > now %}
     <span>Retrying shortly{% if capture.error %} ({{ capture.error }}){% endif %}.</span>
@@ -17,15 +31,45 @@
   {% elif capture.status == "processing" %}
     <span>Reading it now…</span>
   {% elif capture.status == "done" %}
-    {% if outcome %}
+    {% if capture.parent_capture_id and extension %}
+    <span class="extension-outcome">Added {{ extension[0] }} new, {{ extension[1] }} already known.</span>
+    {% elif outcome %}
     <span>Added {% for place in outcome %}{{ place.n }} item{{ "s" if place.n != 1 }} to <a href="/l/{{ place.short_code }}">{{ place.name }}</a>{% if place.review %} ({{ place.review }} to review){% endif %}{{ ", " if not loop.last }}{% endfor %}.</span>
     {% else %}
     <span>Done: no items found.</span>
     {% endif %}
     {% if capture.merchant %}<span class="muted">{{ capture.merchant }}</span>{% endif %}
+    {% if capture.type in ("photo", "receipt", "text") and view != "group" and compare_available(request.app.state.settings) %}<a class="compare-link" href="/compare/cases/new?capture_id={{ capture.id }}">Use for model comparison</a>{% endif %}
   {% else %}
     <span class="error">Failed: {{ capture.error or "unknown error" }}</span>
-    <button type="button" hx-post="/captures/{{ capture.id }}/retry"
-            hx-target="#capture-{{ capture.id }}" hx-swap="outerHTML">Retry</button>
+    <button type="button" hx-post="/captures/{{ capture.id }}/retry{{ query }}"
+            hx-target="#capture-{{ capture.id }}" hx-swap="outerHTML"
+            data-show-errors data-error-target="#capture-{{ capture.id }}-retry-message">Retry</button>
+    <div class="form-message" id="capture-{{ capture.id }}-retry-message" data-form-message></div>
+  {% endif %}
+  </div>
+  {% if view == "list" and capture.type in ("photo", "reconcile") and capture.photo_count %}
+  <a class="capture-view" id="capture-{{ capture.id }}-view" href="/captures/{{ capture.id }}">{{ capture.photo_count }} photo{{ "s" if capture.photo_count != 1 }} · View</a>
+  {% endif %}
+  {% if view == "panel" and capture.status == "done" and group and group.photos %}
+  <div class="capture-result">
+    {{ group_gallery("capture-" ~ capture.id ~ "-gallery", group) }}
+    <p class="links">
+      <a href="/captures/{{ capture.id }}" id="capture-{{ capture.id }}-view">View</a>
+      {% if capture.type == "photo" %}<a href="/captures/{{ capture.id }}#capture-{{ group.root_id }}-extend" id="capture-{{ capture.id }}-another">Add another angle</a>{% endif %}
+    </p>
+  </div>
   {% endif %}
 </div>
+{% if view == "group" and group and oob is defined and oob %}
+{% if capture.status == "done" %}
+{{ group_section(group, oob=True) }}
+{{ group_meta(group, oob=True) }}
+{% if capture.id == group.root_id %}
+{% if capture.type == "photo" %}{{ extend_section(group, none, oob=True) }}{% endif %}
+{% else %}
+<span id="capture-{{ group.root_id }}-extend-max" data-tray-max="{{ [group.photo_capacity, max_photos_per_send]|min }}"
+      {%- if group.photo_capacity < max_photos_per_send %} data-tray-room{% endif %} hidden hx-swap-oob="true"></span>
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Comparison #{{ run.id }} · Inventory{% endblock %}
+{% block content %}
+{% from "partials/gallery.html" import strip %}
+<p class="links"><a href="/compare">← Model comparison</a></p>
+<h1>Comparison #{{ run.id }}</h1>
+{% include "partials/compare_run.html" %}
+<p class="muted" id="compare-meta">{{ run.created_at[:16] | replace("T", " ") }} UTC ·
+  n = {{ report.n_cases }} case{{ "s" if report.n_cases != 1 }} · {{ report.models|length }} models ·
+  rough estimate {{ (run.estimate_micros / 1000000)|usd }}, spent {{ (report.progress.cost_micros / 1000000)|usd }}</p>
+
+<h2>Ranking</h2>
+<p class="muted">Ranked by mean F1 (how well the found items match your corrected list; a failed
+  call counts as 0), ties by lower cost. “Best value” is the cheapest model within 0.05 F1 of
+  the best.</p>
+{% include "partials/compare_summary.html" %}
+
+<h2>Cases</h2>
+<ul class="case-details">
+{% for view in report.cases %}
+  <li>
+  <details class="case-detail" id="case-{{ view.case_id }}">
+    <summary>{% if view.case %}{{ view.case.label }}{% else %}Case {{ view.case_id }}{% endif %}
+      · {{ view.expected|length }} expected</summary>
+    <p class="muted">Original capture: {% if view.case and view.case.capture_model %}<code class="original-model">{{ view.case.capture_model }}</code>{% else %}unknown model{% endif %}
+      {%- if view.case and view.case.deleted_at %} · case deleted since{% endif %}</p>
+    <h3>Expected</h3>
+    <ul class="lines">
+      {% for e in view.expected %}<li>{{ e.name }} × {{ e.quantity }}{% if e.price_cents is not none %} · {{ "%.2f"|format(e.price_cents / 100) }}{% endif %}</li>{% endfor %}
+    </ul>
+    {% if view.photos and view.models %}
+    {# Each model's boxes on the case photos, one model at a time; numbers = the model's
+       item lines below (missed lines have none). Shown, not scored. #}
+    <h3>Boxes</h3>
+    <div class="gallery report-gallery" id="case-{{ view.case_id }}-gallery" data-gallery>
+      <div class="model-switch" role="group" aria-label="Show the boxes of">
+        {% for mc in view.models %}<button type="button" class="secondary" id="case-{{ view.case_id }}-model-{{ loop.index0 }}"
+          data-gallery-model="{{ loop.index0 }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ report.names[mc.model] }}</button>{% endfor %}
+      </div>
+      {{ strip("case-" ~ view.case_id ~ "-gallery", report_frames(view.photos, view.models), "Case photos") }}
+    </div>
+    {% endif %}
+    {% for mc in view.models %}
+    <h3 class="model-case" data-model-id="{{ mc.model }}">{{ report.names[mc.model] }}
+      {% if mc.f1 is not none %}<span class="muted">F1 {{ "%.2f"|format(mc.f1) }}</span>{% endif %}</h3>
+    {% if mc.status == "ok" %}
+    <ul class="lines">
+      {% for line in mc.lines %}
+      <li class="line-{{ line.mark }}">
+        {% if line.mark == "matched" %}<span aria-label="matched">✓</span>{% elif line.mark == "extra" %}<span aria-label="extra">+</span>{% else %}<span aria-label="missed">−</span>{% endif %}
+        {% if line.number and line.boxes and view.photos %}<span class="line-num" aria-label="box {{ line.number }}">{{ line.number }}</span>{% endif %}
+        {{ line.name }} × {{ line.quantity }}{% if line.price_cents is not none %} · {{ "%.2f"|format(line.price_cents / 100) }}{% endif %}
+        {% if line.mark == "matched" %}{% if line.other != line.name %}<span class="muted">(= {{ line.other }})</span>{% endif %}{% if not line.quantity_ok %} <span class="error">wrong quantity</span>{% endif %}
+        {% elif line.mark == "extra" %}<span class="muted">extra</span>{% else %}<span class="muted">missed</span>{% endif %}
+      </li>
+      {% else %}<li class="muted">No items.</li>{% endfor %}
+    </ul>
+    {% elif mc.status == "failed" %}<p class="error">Failed: {{ mc.error or "unknown error" }}</p>
+    {% if mc.error_detail %}<details class="error-detail"><summary>Details</summary><code>{{ mc.error_detail }}</code></details>{% endif %}
+    {% elif mc.status == "pending" %}<p class="muted">Not run yet.</p>
+    {% else %}<p class="muted">Cancelled.</p>{% endif %}
+    {% endfor %}
+  </details>
+  </li>
+{% endfor %}
+</ul>
+{% endblock %}

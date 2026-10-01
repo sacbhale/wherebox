@@ -1,0 +1,25 @@
+{# One model picker row, shared by the Settings picker and the comparison picker.
+   row: settings_info.ModelRow; per: what the rough cost is for ("capture", "case");
+   warn_text_only: warn that image captures fail; rate_hint: note that free (":free")
+   variants are often rate-limited; the caller block renders the row's action (Use / Add). #}
+{% macro model_row(row, per, warn_text_only=False, rate_hint=False) %}
+{% set m = row.model %}
+<li class="model-row" data-model-id="{{ m.id }}">
+  <div class="model-main">
+    <div class="model-name">{{ m.name }}</div>
+    <div class="muted model-id"><code>{{ m.id }}</code></div>
+    <div class="model-badges">
+      {% if m.accepts_images %}<span class="badge">images</span>{% else %}<span class="badge warn">text only</span>{% endif %}
+      {% if m.strategy == "tools" %}<span class="badge">tools</span>
+      {% elif m.strategy == "json_schema" %}<span class="badge">JSON</span>
+      {% else %}<span class="badge warn">best effort</span>{% endif %}
+      {% if m.is_free %}<span class="badge">free</span>{% endif %}
+    </div>
+    <div class="muted model-price">{{ m.prompt_usd_per_mtok|usd }} / {{ m.completion_usd_per_mtok|usd }} per 1M in/out
+      · ~{{ row.capture_usd|usd }} per {{ per }} (rough)</div>
+    {% if rate_hint and m.id.endswith(":free") %}<div class="muted model-hint">Free variants are often rate-limited: results can take a few minutes longer.</div>{% endif %}
+    {% if warn_text_only and not m.accepts_images %}<div class="error model-warning">Photo, receipt and reconcile captures will fail with this model.</div>{% endif %}
+  </div>
+  {{ caller() }}
+</li>
+{% endmacro %}

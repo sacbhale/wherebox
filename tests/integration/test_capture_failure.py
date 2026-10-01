@@ -7,9 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.ai.fake import FakeProvider, FakeStep
-from app.ai.provider import ProviderPermanentError, ProviderTransientError
+from app.ai.provider import ProviderPermanentError, ProviderRateLimited, ProviderTransientError
 from app.ai.schemas import Usage
 from app.capture import service, worker
+from app.db.timestamps import utc_iso
 from app.inventory import locations
 from app.main import create_app
 from tests.capture_helpers import (
@@ -67,7 +68,8 @@ def test_exception_fails_the_capture_keeping_input_and_retry_succeeds(
     assert status.status_code == 286
     assert message in status.text and f'hx-post="/captures/{cid}/retry"' in status.text
     listing = auth_client.get("/captures")
-    assert listing.status_code == 200 and f'hx-post="/captures/{cid}/retry"' in listing.text
+    assert listing.status_code == 200
+    assert f'hx-post="/captures/{cid}/retry?in=list"' in listing.text
 
     retried = auth_client.post(f"/captures/{cid}/retry", headers=HX)
     assert retried.status_code == 200 and 'hx-trigger="every 2s"' in retried.text
@@ -133,6 +135,58 @@ def test_transient_requeue_waits_for_not_before(auth_client, auth_settings, gara
     with open_db(auth_settings) as conn:
         capture = capture_row(conn, cid)
     assert (capture["status"], capture["attempts"]) == ("done", 2)
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "waits"),
+    # At least 5 s (a 429 without Retry-After: 30 s), at most 5 min.
+    [(None, 30), (2, 5), (40, 40), (3600, 300), (1e14, 300), (1e300, 300)],
+)
+def test_transient_requeue_honors_retry_after(
+    auth_client, auth_settings, garage, retry_after, waits
+):
+    auth_client.app.state.clock = lambda: T0
+    cid = capture_id(post_photo(auth_client, garage))
+    busy = ProviderRateLimited(
+        "OpenRouter HTTP 429: Provider returned error", retry_after=retry_after
+    )
+    provider = FakeProvider([busy, script_step(0)])
+    assert run(auth_settings, provider, now=T0) is True
+    with open_db(auth_settings) as conn:
+        capture = capture_row(conn, cid)
+    assert capture["status"] == "queued"
+    assert capture["not_before"] == utc_iso(T0 + timedelta(seconds=waits))
+    assert run(auth_settings, provider, now=T0 + timedelta(seconds=waits - 1)) is False
+    assert run(auth_settings, provider, now=T0 + timedelta(seconds=waits)) is True
+    with open_db(auth_settings) as conn:
+        assert capture_row(conn, cid)["status"] == "done"
+
+
+def test_rate_limit_without_retry_after_backs_off_longer(auth_client, auth_settings, garage):
+    """30 s, then 60 s (within the 3-attempt cap); other transient errors keep 5 s."""
+    auth_client.app.state.clock = lambda: T0
+    cid = capture_id(post_photo(auth_client, garage))
+    busy = ProviderRateLimited("OpenRouter HTTP 429: Provider returned error")
+    provider = FakeProvider([busy, busy, busy])
+    moment = T0
+    waits = []
+    for _attempt in range(3):
+        assert run(auth_settings, provider, now=moment) is True
+        with open_db(auth_settings) as conn:
+            capture = capture_row(conn, cid)
+        assert capture["status"] == "queued"
+        waits.append(
+            round((datetime.fromisoformat(capture["not_before"]) - moment).total_seconds())
+        )
+        moment = datetime.fromisoformat(capture["not_before"])
+    assert waits == [30, 60, 60]
+    assert run(auth_settings, provider, now=moment) is True
+    with open_db(auth_settings) as conn:
+        assert capture_row(conn, cid)["error"] == "gave up after 3 attempts"
+    assert worker.retry_delay(ProviderTransientError("503")) == timedelta(seconds=5)
+    assert worker.retry_delay(ProviderTransientError("503", retry_after=float("nan"))) == (
+        timedelta(seconds=5)
+    )
 
 
 def test_restart_requeues_processing_captures_keeping_attempts(auth_settings, garage):

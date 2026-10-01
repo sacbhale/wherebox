@@ -1,0 +1,42 @@
+{# Parts of the capture group page (/captures/{root}) that the group view of the status
+   partial also renders out of band when a capture of the group finishes. #}
+{% from "partials/photo_tray.html" import tray %}
+{% from "partials/gallery.html" import group_gallery %}
+
+{# The group's annotated gallery. ``highlight``: an item id to start highlighted. #}
+{% macro group_section(group, highlight=None, oob=False) %}
+<section class="group-photos" id="capture-{{ group.root_id }}-group"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if group.photos %}<p class="muted gallery-hint">Tap an item to see its box on the photos; tap a box to find its item. Swipe sideways for more photos.</p>{% endif %}
+  {{ group_gallery("capture-" ~ group.root_id ~ "-gallery", group, highlight) }}
+</section>
+{% endmacro %}
+
+{# The page's meta line: date, photo count (done captures), number of captures. #}
+{% macro group_meta(group, oob=False) %}
+<p class="muted" id="capture-{{ group.root_id }}-meta"{% if oob %} hx-swap-oob="true"{% endif %}>{{ group.root.created_at[:16] | replace("T", " ") }} UTC
+  · {{ group.photos|length }} photo{{ "s" if group.photos|length != 1 }}
+  {%- if group.captures|length > 1 %} from {{ group.captures|length }} captures{% endif %}</p>
+{% endmacro %}
+
+{# "Add another angle" (photo captures only): the tray form, or why it is not offered.
+   ``refusal``: groups.extend_refusal(root). The tray's limit is the smaller of the group's
+   room and the per-send limit (data-tray-room when the group's room is the limit). #}
+{% macro extend_section(group, refusal, oob=False) %}
+{% set rid = group.root_id %}
+<section class="panel extend" id="capture-{{ rid }}-extend"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <h2>Add another angle</h2>
+  {% if refusal %}
+  <p class="muted" id="capture-{{ rid }}-extend-refusal">{{ refusal }}</p>
+  {% elif group.photo_capacity <= 0 %}
+  <p class="muted" id="capture-{{ rid }}-extend-full">This capture already has {{ max_group_photos }} photos, the most it can hold.</p>
+  {% else %}
+  <p class="muted" id="capture-{{ rid }}-capacity">Photos from another side or closer up. Items already listed are not added again; they get boxes on the new photos.</p>
+  <form class="capture-form" id="capture-{{ rid }}-extend-form" hx-post="/captures/{{ rid }}/extend" hx-encoding="multipart/form-data"
+        hx-target="#capture-{{ rid }}-extend-results" hx-swap="afterbegin show:#capture-{{ rid }}-extend-results:top"
+        onsubmit="return false" data-tray data-show-errors data-error-target="#capture-{{ rid }}-extend-message">
+    {{ tray("capture-" ~ rid ~ "-extend", max=[group.photo_capacity, max_photos_per_send]|min, room=group.photo_capacity < max_photos_per_send) }}
+  </form>
+  <div id="capture-{{ rid }}-extend-results"></div>
+  {% endif %}
+</section>
+{% endmacro %}

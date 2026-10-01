@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": 402,
+    "message": "Insufficient credits. Add more using https://openrouter.ai/settings/credits",
+    "metadata": {
+      "error_type": "payment_required"
+    }
+  }
+}

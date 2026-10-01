@@ -18,6 +18,7 @@ from tests.capture_helpers import (
     capture_id,
     capture_items,
     capture_row,
+    empty_file_input,
     post_photo,
     post_receipt,
     run,
@@ -112,9 +113,12 @@ def test_stored_original_matches_the_upload(auth_client, auth_settings, garage):
         photo = conn.execute("SELECT * FROM photos WHERE id = ?", (photo["id"],)).fetchone()
         linked = {row["photo_id"] for row in capture_items(conn, cid)}
     assert linked == {photo["id"]}
-    with Image.open(FIXTURES / "shelf.jpg") as im:
+    # Every photo gets an upright display JPEG (long edge 2000); width/height are its size.
+    assert photo["display_rel_path"] == photo["rel_path"].replace(".jpg", ".display.jpg")
+    with Image.open(auth_settings.data_dir / photo["display_rel_path"]) as im:
+        assert im.format == "JPEG" and im.size == (2000, 1500)
         assert (photo["width"], photo["height"]) == im.size
-    assert photo["display_rel_path"] is None
+    assert (auth_settings.data_dir / photo["rel_path"]).read_bytes() == upload
 
 
 def test_heic_gets_a_display_jpeg_and_keeps_the_original(auth_client, auth_settings, garage):
@@ -225,8 +229,13 @@ def test_upload_limits_and_validation(make_settings):
             files={"photo": ("x.jpg", b"", "image/jpeg")},
         )
         assert empty.status_code == 400
-        missing = client.post("/captures/photo", headers=HX, data={"location_id": str(garage)})
-        assert missing.status_code == 400
+        missing = client.post(
+            "/captures/photo",
+            headers=HX,
+            data={"location_id": str(garage)},
+            files=[empty_file_input("photos")],
+        )
+        assert missing.status_code == 400 and "Choose a photo" in missing.text
         assert post_photo(client, 999_999).status_code == 400
         with open_db(settings) as conn:
             assert conn.execute("SELECT count(*) FROM captures").fetchone()[0] == 0
@@ -245,7 +254,7 @@ def test_capture_forms(auth_client, auth_settings, garage):
 
     panel = auth_client.get("/captures/panel", params={"loc": garage}).text
     assert re.search(
-        r'<input type="file" name="photo" accept="image/\*" capture="environment"', panel
+        r'<input type="file" accept="image/\*" capture="environment" data-tray-input', panel
     )
     assert f'name="location_id" value="{garage}"' in panel
     assert 'name="text"' in panel and 'name="receipt"' not in panel

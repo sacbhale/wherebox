@@ -1,0 +1,50 @@
+{# The Settings "AI model" section; re-rendered after a model is chosen or reset. #}
+<section id="ai-model" aria-labelledby="ai-model-heading">
+  <h2 id="ai-model-heading">AI model</h2>
+  {% if section.warnings %}
+  <ul class="warnings" id="ai-model-warnings">
+    {% for warning in section.warnings %}<li class="error">{{ warning }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <dl>
+    <dt>Active model</dt>
+    <dd id="ai-model-current">
+      <strong>{{ section.current.name if section.current else section.model }}</strong>
+      <code>{{ section.model }}</code>
+    </dd>
+    {% if section.current %}
+    <dd id="ai-model-price">
+      {% if section.current.price_known %}
+      {{ section.current.prompt_usd_per_mtok|usd }} input / {{ section.current.completion_usd_per_mtok|usd }} output per 1M tokens
+      {% else %}Price unknown{% endif %}
+    </dd>
+    {% endif %}
+    {% if section.overridden %}
+    <dd id="ai-model-source">Chosen here (AI_MODEL in .env is <code>{{ section.env_model }}</code>).
+      <button type="button" class="secondary" id="ai-model-reset"
+              hx-post="/settings/model/reset" hx-target="#ai-model" hx-swap="outerHTML">Reset to .env default</button>
+    </dd>
+    {% else %}
+    <dd id="ai-model-source">Using AI_MODEL from .env.</dd>
+    {% endif %}
+  </dl>
+  <p class="muted">A new model applies to the next capture. Costs below are rough estimates;
+    the ledger records what OpenRouter actually charges.</p>
+
+  <form id="model-picker" class="stack" role="search" hx-get="/settings/models"
+        hx-target="#model-results" hx-swap="outerHTML">
+    <input type="search" id="model-query" name="q" placeholder="Search models, e.g. gemini flash"
+           aria-label="Search models" autocomplete="off" value="{{ section.results.query }}"
+           hx-get="/settings/models" hx-trigger="input changed delay:250ms, search"
+           hx-include="#model-picker" hx-target="#model-results" hx-swap="outerHTML"
+           hx-sync="this:replace">
+    <label class="check"><input type="checkbox" id="model-all" name="all" value="1"
+      hx-get="/settings/models" hx-trigger="change" hx-include="#model-picker"
+      hx-target="#model-results" hx-swap="outerHTML"
+      {% if not section.results.images_only %}checked{% endif %}> Include models that cannot see images</label>
+  </form>
+  {% with results = section.results %}{% include "partials/model_results.html" %}{% endwith %}
+</section>
+{% if provider_oob %}
+<dd id="ai-provider" hx-swap-oob="true">{% if provider_oob.disabled %}AI disabled{% else %}{{ provider_oob.name }} / {{ section.model }}{% endif %}</dd>
+{% endif %}

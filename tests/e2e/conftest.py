@@ -3,6 +3,7 @@
 Every test gets its own server (fresh DATA_DIR, fresh fake provider), so the scripted fake AI
 steps are consumed from the start. ``@pytest.mark.fake_steps(0, {...})`` picks the script:
 ints are indexes into tests/fixtures/fake_script.json, dicts are literal steps.
+``@pytest.mark.fake_models({"<model id>": {"steps": [...]}})`` adds per-model scripts.
 
 Browsers: Chromium and WebKit both run by default (``--browser`` narrows it). They are launched
 locally when the host can run them; otherwise (e.g. Ubuntu 20.04, which Playwright no longer
@@ -42,6 +43,9 @@ DEFAULT_BROWSERS = ["chromium", "webkit"]
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "fake_steps(*steps): fake AI script steps (fixture index or step dict)"
+    )
+    config.addinivalue_line(
+        "markers", "fake_models(scripts): per-model fake AI scripts ({id: {steps: [...]}})"
     )
     if not config.option.browser:
         config.option.browser = list(DEFAULT_BROWSERS)
@@ -173,11 +177,15 @@ class LiveServer:
             headers={"HX-Request": "true"},
         )
         assert response.status_code == 200, response.text
-        deadline = time.monotonic() + 20
+        self.wait_for_captures()
+        assert not self.query("SELECT 1 FROM captures WHERE status = 'failed'")
+
+    def wait_for_captures(self, timeout: float = 20) -> None:
+        """Wait until the worker has finished every queued capture."""
+        deadline = time.monotonic() + timeout
         while self.query("SELECT 1 FROM captures WHERE status IN ('queued', 'processing')"):
             assert time.monotonic() < deadline, "capture did not finish"
             time.sleep(0.1)
-        assert not self.query("SELECT 1 FROM captures WHERE status = 'failed'")
 
     def login(self, page: Page, path: str = "/") -> None:
         page.goto(self.url(f"/login?next={path}"))
@@ -186,20 +194,25 @@ class LiveServer:
         page.wait_for_url(self.url(path))
 
 
-def _script(marker: pytest.Mark | None, directory: Path) -> Path:
+def _script(marker: pytest.Mark | None, models: pytest.Mark | None, directory: Path) -> Path:
     fixture = FIXTURES / "fake_script.json"
-    if marker is None:
+    if marker is None and models is None:
         return fixture
     base = json.loads(fixture.read_text())
-    steps = [base["steps"][s] if isinstance(s, int) else s for s in marker.args]
+    if marker is not None:
+        steps = [base["steps"][s] if isinstance(s, int) else s for s in marker.args]
+        base |= {"steps": steps, "repeat_last": False}
+    if models is not None:
+        base["models"] = models.args[0]
     path = directory / "fake_script.json"
-    path.write_text(json.dumps(base | {"steps": steps, "repeat_last": False}))
+    path.write_text(json.dumps(base))
     return path
 
 
 @pytest.fixture
 def server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[LiveServer]:
-    """A uvicorn server with the fake AI provider and a running worker, and a logged-in
+    """A uvicorn server with the fake AI provider (models from the test catalog, AI_MODEL
+    test/model-a) and a running worker, and a logged-in
     httpx client (sending the matching Origin) for seeding data."""
     port = _free_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -209,7 +222,16 @@ def server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[LiveServe
     env |= {
         "DATA_DIR": str(data_dir),
         "AI_PROVIDER": "fake",
-        "FAKE_AI_SCRIPT": str(_script(request.node.get_closest_marker("fake_steps"), tmp_path)),
+        "FAKE_AI_SCRIPT": str(
+            _script(
+                request.node.get_closest_marker("fake_steps"),
+                request.node.get_closest_marker("fake_models"),
+                tmp_path,
+            )
+        ),
+        # Test-only OpenRouter catalog: shows the Settings model picker under the fake provider.
+        "OPENROUTER_CATALOG_FILE": str(FIXTURES / "openrouter" / "models.json"),
+        "AI_MODEL": "test/model-a",
         "PUBLIC_BASE_URL": base_url,
         "HOUSEHOLD_PASSWORD": PASSWORD,
         "WORKER_AUTOSTART": "true",

@@ -5,7 +5,11 @@ call. ``run_once`` processes at most one capture and is what tests drive directl
 (WORKER_AUTOSTART=false); ``Worker`` runs it in a background thread.
 
 Adding a capture type: one ``Handler`` in ``HANDLERS`` (AI mode, extra request fields, apply
-function). Periodic jobs that share this thread belong in ``Worker._tick``.
+function). An "add another angle" extension (``parent_capture_id`` set; its type stays
+``photo``) uses ``EXTEND``. Periodic jobs that share this thread belong in ``Worker._tick``.
+
+One provider call per capture sends all of its images (for an extension: all photos of its
+group), in order; ``Applier`` gets the photo id of each image (``image_photo_ids``).
 """
 
 import logging
@@ -18,13 +22,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
-from app.ai.provider import AIProvider, ProviderTransientError, ledger_outcome
+from app.ai.model_choice import effective_model
+from app.ai.provider import (
+    AIProvider,
+    ProviderRateLimited,
+    ProviderTransientError,
+    capped_retry_after,
+    ledger_outcome,
+)
 from app.ai.registry import ai_disabled_reason
 from app.ai.schemas import ExtractRequest, ExtractResult, Mode
-from app.capture import apply, images, reconcile
-from app.capture.budget import budget_exhausted, record_ai_call
+from app.capture import apply, extend, groups, images, reconcile
+from app.capture.budget import budget_exhausted, ledger_usage, record_ai_call
+from app.compare import execution as comparisons
 from app.config import Settings
 from app.db import backup
 from app.db.connection import connect, write_tx
@@ -34,19 +44,24 @@ log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 TRANSIENT_RETRY_DELAY = timedelta(seconds=5)
+# A rate limit (429) without Retry-After waits longer: these, by attempt (the last repeats).
+RATE_LIMIT_RETRY_DELAYS = (timedelta(seconds=30), timedelta(seconds=60))
+# A provider's Retry-After lengthens the delay, up to this.
+MAX_RETRY_DELAY = timedelta(minutes=5)
 IDLE_WAIT_S = 1.0
 # Pause between two processed captures so web requests get the SQLite write lock in between
 # (SQLite's lock is not fair; back-to-back write transactions starve waiters).
 BUSY_GAP_S = 0.05
 BACKUP_RETRY_DELAY = timedelta(minutes=10)
-HEIF_EXTENSIONS = (".heic", ".heif")
-EXIF_ORIENTATION = 0x0112
 
 GAVE_UP = f"gave up after {MAX_ATTEMPTS} attempts"
+# Safety net behind the group checks of create_capture and retry.
+TOO_MANY_GROUP_PHOTOS = f"more than {groups.MAX_GROUP_PHOTOS} photos in this capture"
 BUDGET_REACHED = "monthly budget reached"
 
+# (conn, settings, capture, result, image_photo_ids, extras) -> new item ids
 Applier = Callable[
-    [sqlite3.Connection, Settings, sqlite3.Row, ExtractResult, int | None, dict[str, Any]],
+    [sqlite3.Connection, Settings, sqlite3.Row, ExtractResult, list[int], dict[str, Any]],
     list[int],
 ]
 RequestExtras = Callable[[sqlite3.Connection, sqlite3.Row], dict[str, Any]]
@@ -79,6 +94,14 @@ HANDLERS: dict[str, Handler] = {
     "text": Handler("text", _text_extras, apply.apply_text),
     "reconcile": Handler("reconcile", reconcile.request_extras, reconcile.apply_reconcile),
 }
+# Selected instead of HANDLERS["photo"] when the capture has a parent_capture_id (R5).
+EXTEND = Handler("extend", extend.request_extras, extend.apply_extend)
+
+
+def handler_for(capture: sqlite3.Row) -> Handler | None:
+    if capture["type"] == "photo" and capture["parent_capture_id"] is not None:
+        return EXTEND
+    return HANDLERS.get(capture["type"])
 
 
 def reset_processing(conn: sqlite3.Connection) -> int:
@@ -141,16 +164,31 @@ def _fail(
         _finish(conn, capture_id, "failed", now, error, call)
 
 
+def retry_delay(error: ProviderTransientError, attempts: int = 1) -> timedelta:
+    """How long a capture waits after a transient error of its ``attempts``-th call:
+    TRANSIENT_RETRY_DELAY (a rate limit without Retry-After: RATE_LIMIT_RETRY_DELAYS), or the
+    provider's Retry-After when longer, at most MAX_RETRY_DELAY."""
+    base = TRANSIENT_RETRY_DELAY
+    if isinstance(error, ProviderRateLimited) and error.retry_after is None:
+        base = RATE_LIMIT_RETRY_DELAYS[min(max(attempts, 1), len(RATE_LIMIT_RETRY_DELAYS)) - 1]
+    return min(max(base, capped_retry_after(error, MAX_RETRY_DELAY)), MAX_RETRY_DELAY)
+
+
 def _requeue(
-    conn: sqlite3.Connection, capture_id: int, error: str, now: datetime, call: dict[str, Any]
+    conn: sqlite3.Connection,
+    capture_id: int,
+    error: ProviderTransientError,
+    now: datetime,
+    call: dict[str, Any],
+    attempts: int,
 ) -> None:
     with write_tx(conn):
         conn.execute(
             "UPDATE captures SET status = 'queued', not_before = ?, error = ?, provider = ?,"
             " model = ?, duration_ms = ? WHERE id = ?",
             (
-                utc_iso(now + TRANSIENT_RETRY_DELAY),
-                error,
+                utc_iso(now + retry_delay(error, attempts)),
+                str(error),
                 call["provider"],
                 call["model"],
                 call["duration_ms"],
@@ -159,37 +197,38 @@ def _requeue(
         )
 
 
-def _upright_size(path: Path) -> tuple[int, int] | None:
-    """Pixel size after EXIF rotation, from the header only (no decode)."""
+def _prepare(
+    conn: sqlite3.Connection, settings: Settings, photos: list[sqlite3.Row]
+) -> list[tuple[int, bytes]]:
+    """(photo id, JPEG) for every image the provider gets, in the photos' order (a PDF gives
+    up to 3 pages of the same photo). A photo without a display JPEG gets one first (upright,
+    long edge 2000) and its width/height become the display size; the AI image is then made
+    from the display JPEG, so boxes map 1:1 onto it (images module docstring). Old photos
+    whose display JPEG is gone are prepared from the original. Raises images.ImageRejected."""
+    prepared: list[tuple[int, bytes]] = []
+    updates: list[tuple[str, int, int, int]] = []
     try:
-        with Image.open(path) as im:
-            width, height = im.size
-            if im.getexif().get(EXIF_ORIENTATION) in (5, 6, 7, 8):
-                return height, width
-            return width, height
-    except (OSError, ValueError, Image.DecompressionBombError):
-        return None
-
-
-def _prepare(conn: sqlite3.Connection, settings: Settings, photo: sqlite3.Row) -> list[bytes]:
-    """Downscaled JPEGs for the provider; also fills the photo's size and, for HEIC, writes
-    the display JPEG next to the original. Raises images.ImageRejected."""
-    source = settings.data_dir / photo["rel_path"]
-    prepared = images.prepare_images(source, max_edge=settings.ai_max_image_edge)
-    display_rel = photo["display_rel_path"]
-    size: tuple[int, int] | None
-    if source.suffix.lower() in HEIF_EXTENSIONS:
-        display_rel = display_rel or Path(photo["rel_path"]).with_suffix(".display.jpg").as_posix()
-        size = images.make_display_jpeg(source, settings.data_dir / display_rel)
-    elif source.suffix.lower() == ".pdf":
-        size = None
-    else:
-        size = _upright_size(source)
-    with write_tx(conn):
-        conn.execute(
-            "UPDATE photos SET display_rel_path = ?, width = ?, height = ? WHERE id = ?",
-            (display_rel, size[0] if size else None, size[1] if size else None, photo["id"]),
-        )
+        for photo in photos:
+            source = settings.data_dir / photo["rel_path"]
+            display_rel = photo["display_rel_path"]
+            if display_rel is None and not images._is_pdf(source):
+                display_rel = Path(photo["rel_path"]).with_suffix(".display.jpg").as_posix()
+                width, height = images.make_display_jpeg(source, settings.data_dir / display_rel)
+                updates.append((display_rel, width, height, photo["id"]))
+            display = settings.data_dir / display_rel if display_rel else None
+            path = display if display is not None and display.is_file() else source
+            prepared += [
+                (photo["id"], jpeg)
+                for jpeg in images.prepare_images(path, max_edge=settings.ai_max_image_edge)
+            ]
+    finally:
+        # Display JPEGs already written are recorded even when a later photo is rejected.
+        if updates:
+            with write_tx(conn):
+                conn.executemany(
+                    "UPDATE photos SET display_rel_path = ?, width = ?, height = ? WHERE id = ?",
+                    updates,
+                )
     return prepared
 
 
@@ -234,19 +273,21 @@ def _process(
     if capture["attempts"] > MAX_ATTEMPTS:
         _fail(conn, capture_id, GAVE_UP, stamp())
         return
-    handler = HANDLERS.get(capture["type"])
+    handler = handler_for(capture)
     if handler is None:
         _fail(conn, capture_id, f"unsupported capture type {capture['type']!r}", stamp())
         return
     if provider is None:
-        _fail(conn, capture_id, ai_disabled_reason(settings) or "AI capture is disabled", stamp())
+        reason = ai_disabled_reason(settings, effective_model(conn, settings))
+        _fail(conn, capture_id, reason or "AI capture is disabled", stamp())
         return
 
-    photo = conn.execute(
-        "SELECT * FROM photos WHERE capture_id = ? ORDER BY id LIMIT 1", (capture_id,)
-    ).fetchone()
+    photos = groups.call_photos(conn, capture)
+    if len(photos) > groups.MAX_GROUP_PHOTOS:
+        _fail(conn, capture_id, TOO_MANY_GROUP_PHOTOS, stamp())
+        return
     try:
-        prepared = _prepare(conn, settings, photo) if photo is not None else []
+        prepared = _prepare(conn, settings, photos)
         extras = handler.extras(conn, capture)
     except (images.ImageRejected, apply.CaptureFailed) as exc:
         _fail(conn, capture_id, str(exc), stamp())
@@ -256,11 +297,12 @@ def _process(
         _fail(conn, capture_id, BUDGET_REACHED, stamp())
         return
 
+    image_photo_ids = [photo_id for photo_id, _jpeg in prepared]
     request = ExtractRequest(
         mode=handler.mode,
-        images=prepared,
+        images=[jpeg for _photo_id, jpeg in prepared],
         text=capture["input_text"],
-        timeout_s=settings.ai_timeout_seconds,
+        timeout_s=images.call_timeout(settings.ai_timeout_seconds, len(prepared)),
         **extras,
     )
     started_at = stamp()
@@ -277,17 +319,28 @@ def _process(
         "duration_ms": round((time.monotonic() - started) * 1000),
     }
     usage = result.usage if result is not None else getattr(error, "usage", None)
-    record_ai_call(conn, settings, capture_id, started_at, usage, ledger_outcome(error))
+    usage, model_info = ledger_usage(conn, settings, provider, usage, error, request)
+    record_ai_call(
+        conn,
+        settings,
+        capture_id,
+        started_at,
+        usage,
+        ledger_outcome(error),
+        model_info=model_info,
+        provider=provider.name,
+        image_count=len(request.images),
+    )
 
     if isinstance(error, ProviderTransientError):
-        _requeue(conn, capture_id, str(error), stamp(), call)
+        _requeue(conn, capture_id, error, stamp(), call, capture["attempts"])
         return
     if result is None:
         _fail(conn, capture_id, str(error) or type(error).__name__, stamp(), call)
         return
     try:
         with write_tx(conn):
-            handler.apply(conn, settings, capture, result, photo["id"] if photo else None, extras)
+            handler.apply(conn, settings, capture, result, image_photo_ids, extras)
             _finish(conn, capture_id, "done", stamp(), call=call)
     except apply.CaptureFailed as exc:
         _fail(conn, capture_id, str(exc), stamp(), call)
@@ -296,18 +349,34 @@ def _process(
         _fail(conn, capture_id, f"could not save the result: {exc}", stamp(), call)
 
 
+ProviderFor = Callable[[str], AIProvider | None]
+
+
 class Worker:
     """Background thread around ``run_once``. It idles with ``Event.wait`` (never a busy
-    loop); ``wake()`` lets a new capture start without waiting for the idle timeout."""
+    loop); ``wake()`` lets a new capture start without waiting for the idle timeout.
+
+    ``provider_for(model_id)`` (memoized, see ``registry.make_provider_for``) is resolved on
+    every tick with the effective model, so a model chosen in Settings applies to the next
+    capture. Without it the fixed ``provider`` is used for every model (tests).
+
+    When no capture is claimable, a tick executes one pending model-comparison result with
+    ``compare_provider_for(result.model)`` (the OpenRouter factory, or the fake one under
+    AI_PROVIDER=fake; default: ``provider_for``), so a comparison delays a new capture by at
+    most one call."""
 
     def __init__(
         self,
         settings: Settings,
-        provider: AIProvider | None,
+        provider: AIProvider | None = None,
         clock: Callable[[], datetime] = utcnow,
+        *,
+        provider_for: ProviderFor | None = None,
+        compare_provider_for: ProviderFor | None = None,
     ) -> None:
         self.settings = settings
-        self.provider = provider
+        self.provider_for: ProviderFor = provider_for or (lambda _model: provider)
+        self.compare_provider_for: ProviderFor = compare_provider_for or self.provider_for
         self.clock = clock
         self._stop = threading.Event()
         self._wake = threading.Event()
@@ -328,9 +397,15 @@ class Worker:
             self._thread.join(timeout)
 
     def _tick(self, conn: sqlite3.Connection) -> bool:
-        """One unit of background work; True when something was done."""
+        """One unit of background work (captures first, else one comparison call); True
+        when something was done."""
         self._backup_if_due(conn)
-        return run_once(conn, self.settings, self.provider, clock=self.clock)
+        provider = self.provider_for(effective_model(conn, self.settings))
+        if run_once(conn, self.settings, provider, clock=self.clock):
+            return True
+        return comparisons.run_once(
+            conn, self.settings, self.compare_provider_for, clock=self.clock
+        )
 
     def _backup_if_due(self, conn: sqlite3.Connection) -> None:
         """Every BACKUP_INTERVAL_HOURS (and on the first tick when no recent backup exists)

@@ -1,5 +1,5 @@
 """Capture form markup: voice input on the text form (AC-19), camera and receipt inputs
-(plan Step 5 "Inputs", AC-32)."""
+(plan Step 5 "Inputs", AC-32; the photo tray of spec-multiphoto R13)."""
 
 import re
 
@@ -68,6 +68,8 @@ def test_camera_inputs_use_the_rear_camera(auth_client, shelf):
     ]:
         tag = file_input(html[name], input_id)
         assert 'accept="image/*"' in tag and 'capture="environment"' in tag, (name, tag)
+        # "Take photo" of the tray: one photo at a time, kept by app.js (no name, R13).
+        assert "multiple" not in tag and "name=" not in tag and "data-tray-input" in tag, tag
 
 
 def test_receipt_input_accepts_pdf_and_has_no_capture(auth_client, shelf):

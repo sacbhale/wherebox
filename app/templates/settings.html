@@ -29,6 +29,18 @@
 </dl>
 <p class="note" id="ai-timeout-note">{{ timeout_note }}</p>
 
+{% if section.selectable %}{% include "partials/ai_model.html" %}{% endif %}
+
+<h2>Model comparison</h2>
+<dl>
+  <dt>Cases</dt>
+  <dd id="compare-cases-count">{{ compare.cases }} comparison case{{ "s" if compare.cases != 1 }}</dd>
+  <dt>Comparison spend this month</dt>
+  <dd id="compare-spend">{{ compare.spend_usd|usd }} (included in the cost above)</dd>
+</dl>
+{% if not compare.available %}<p class="muted" id="compare-unavailable">{{ compare.unavailable }}</p>{% endif %}
+<p><a class="button secondary" id="compare-link" href="/compare">Compare models</a></p>
+
 <h2>Tags</h2>
 <dl>
   <dt>PUBLIC_BASE_URL</dt>

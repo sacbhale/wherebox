@@ -1,0 +1,24 @@
+{# The chosen models (hidden inputs of #compare-form) and the rough estimate.
+   Context: selection (chosen, case_count, estimate, min_models, max_models). #}
+<div id="compare-selection" aria-live="polite">
+  <h3 class="selection-heading">Models ({{ selection.chosen|length }} of {{ selection.min_models }}–{{ selection.max_models }})</h3>
+  {% if selection.chosen %}
+  <ul class="chosen-list">
+    {% for m in selection.chosen %}
+    <li class="chosen" data-model-id="{{ m.id }}">
+      <input type="hidden" name="models" value="{{ m.id }}">
+      <span class="chosen-name">{{ m.name }} <code class="muted">{{ m.id }}</code></span>
+      <button type="button" class="secondary" aria-label="Remove {{ m.name }}"
+              hx-get="/compare/selection" hx-include="#compare-form"
+              hx-vals='{{ {"remove": m.id}|tojson }}' hx-target="#compare-selection" hx-swap="outerHTML">Remove</button>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Search above and tap <strong>Add</strong> on {{ selection.min_models }} to {{ selection.max_models }} models.</p>
+  {% endif %}
+  {% set tokens = selection.estimate.tokens %}
+  <p id="compare-estimate">Rough estimate: <strong>{{ (selection.estimate.total_micros / 1000000)|usd }}</strong>
+    for {{ selection.case_count }} case{{ "s" if selection.case_count != 1 }} × {{ selection.chosen|length }} model{{ "s" if selection.chosen|length != 1 }}
+    <span class="muted">(about {{ "{:,}".format(tokens[0]) }} input + {{ "{:,}".format(tokens[1]) }} output tokens per call)</span></p>
+</div>

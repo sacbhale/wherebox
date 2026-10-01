@@ -1,5 +1,6 @@
 """Shared helpers for capture tests (import as ``from tests.capture_helpers import ...``)."""
 
+import io
 import json
 import re
 import sqlite3
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.ai.fake import FakeProvider, parse_step
 from app.ai.schemas import ExtractedItem, ExtractResult, ReceiptMeta, Usage
@@ -67,6 +69,55 @@ def post_photo(
         data={"location_id": str(location_id)},
         files={"photo": (path.name, path.read_bytes(), content_type)},
     )
+
+
+def empty_file_input(field: str) -> tuple[str, tuple[str, bytes, str]]:
+    """A file field with no file chosen, as browsers post it (filename "")."""
+    return (field, ("", b"", "application/octet-stream"))
+
+
+def make_jpegs(folder: Path, count: int, size: tuple[int, int] = (320, 240)) -> list[Path]:
+    """``count`` distinct small JPEGs (solid colours, so the order can be checked)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for index in range(count):
+        path = folder / f"view{index}.jpg"
+        Image.new("RGB", size, colour(index)).save(path, format="JPEG", quality=95)
+        paths.append(path)
+    return paths
+
+
+def colour(index: int) -> tuple[int, int, int]:
+    return (20 + 30 * index, 200 - 25 * index, (90 * index) % 256)
+
+
+def image_colour(data: bytes) -> tuple[int, int, int]:
+    """The centre pixel of an encoded image."""
+    with Image.open(io.BytesIO(data)) as im:
+        return im.convert("RGB").getpixel((im.width // 2, im.height // 2))
+
+
+def post_photos(
+    client: TestClient,
+    location_id: int | None,
+    paths: list[Path],
+    *,
+    url: str = "/captures/photo",
+    field: str = "photos",
+) -> httpx.Response:
+    """POST several files in one multipart request (``field`` repeated, in order). No paths:
+    an empty file input, as a browser sends it (still multipart)."""
+    data = {} if location_id is None else {"location_id": str(location_id)}
+    kinds = {".pdf": "application/pdf", ".heic": "image/heic"}
+    files = [
+        (field, (path.name, path.read_bytes(), kinds.get(path.suffix, "image/jpeg")))
+        for path in paths
+    ] or [empty_file_input(field)]
+    return client.post(url, headers=HX, data=data, files=files)
+
+
+def post_extend(client: TestClient, capture: int, paths: list[Path]) -> httpx.Response:
+    return post_photos(client, None, paths, url=f"/captures/{capture}/extend")
 
 
 def post_receipt(client: TestClient, path: Path = FIXTURES / "receipt.jpg") -> httpx.Response:

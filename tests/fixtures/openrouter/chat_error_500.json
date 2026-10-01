@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": 500,
+    "message": "Internal Server Error",
+    "metadata": {
+      "error_type": "server"
+    }
+  }
+}

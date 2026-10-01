@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": 408,
+    "message": "Request timed out",
+    "metadata": {
+      "error_type": "timeout"
+    }
+  }
+}

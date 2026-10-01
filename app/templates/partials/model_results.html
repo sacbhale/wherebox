@@ -1,0 +1,24 @@
+{# Picker rows: name, id, badges, price per 1M tokens, rough cost per 1-photo capture, "Use". #}
+{% from "partials/model_row.html" import model_row %}
+<div id="model-results" aria-live="polite">
+  {% set tokens = results.tokens %}
+  {% if results.rows %}
+  <p class="muted" id="model-estimate-basis">Per 1-photo capture: about {{ "{:,}".format(tokens[0]) }} input +
+    {{ "{:,}".format(tokens[1]) }} output tokens{% if tokens[2] %} (average of your recent successful AI calls){% else %} (typical; no captures yet){% endif %}.</p>
+  <ul class="model-list">
+    {% for row in results.rows %}
+    {% call model_row(row, "capture", warn_text_only=True) %}
+      <form hx-post="/settings/model" hx-target="#ai-model" hx-swap="outerHTML">
+        <input type="hidden" name="model" value="{{ row.model.id }}">
+        <button type="submit" class="model-use">Use</button>
+      </form>
+    {% endcall %}
+    {% endfor %}
+  </ul>
+  {% if results.total > results.rows|length %}<p class="muted">Showing {{ results.rows|length }} of {{ results.total }} models: refine the search.</p>{% endif %}
+  {% elif results.catalog.available %}
+  <p class="muted">No models match.</p>
+  {% else %}
+  <p class="muted">The model list is unavailable.</p>
+  {% endif %}
+</div>

@@ -1,0 +1,14 @@
+{# The Past comparisons list. Context: recent (runs.recent); oob (swap it out of band). #}
+<div id="compare-recent"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if recent %}
+  <ul class="run-list" id="run-list">
+    {% for run in recent %}
+    <li data-run-id="{{ run.id }}"><a href="/compare/runs/{{ run.id }}">Comparison #{{ run.id }}</a>
+      <span class="muted">{{ run.created_at[:16] | replace("T", " ") }} UTC · {{ run.status }} ·
+        {{ run.finished or 0 }}/{{ run.total }} calls · {{ (run.cost_micros / 1000000)|usd }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted" id="run-list-empty">No comparisons yet.</p>
+  {% endif %}
+</div>

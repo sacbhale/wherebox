@@ -6,7 +6,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 
 from app.capture import images
 from app.capture.images import ImageRejected, make_display_jpeg, prepare_images
@@ -160,3 +160,45 @@ def test_garbage_is_rejected(tmp_path: Path, content: bytes) -> None:
 def test_missing_file_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ImageRejected):
         prepare_images(tmp_path / "gone.jpg")
+
+
+@pytest.mark.parametrize("kind", ["BMP", "TIFF", "PPM"])
+def test_formats_phones_do_not_produce_are_refused_undecoded(tmp_path: Path, kind: str) -> None:
+    path = tmp_path / "renamed.jpg"
+    Image.new("RGB", (64, 48), (200, 30, 30)).save(path, format=kind)
+    with pytest.raises(ImageRejected, match="not a readable image"):
+        prepare_images(path)
+    with pytest.raises(ImageRejected, match="not a readable image"):
+        make_display_jpeg(path, tmp_path / "out.jpg")
+    assert not (tmp_path / "out.jpg").exists()
+
+
+def test_big_jpeg_is_decoded_at_reduced_scale_and_shrunk_before_transposing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 4080x3072 phone JPEG (orientation 6) for a 2000 px display copy: decoded at half
+    scale (draft), shrunk, then transposed: upright 1506x2000, left half red as stored."""
+    path = tmp_path / "phone.jpg"
+    stored = Image.new("RGB", (4080, 3072), (20, 20, 220))
+    stored.paste((220, 20, 20), (0, 0, 2040, 3072))  # stored left half red
+    exif = Image.Exif()
+    exif[make_fixtures.EXIF_ORIENTATION] = 6  # displayed rotated 90 degrees clockwise
+    stored.save(path, exif=exif.tobytes(), quality=90)
+    drafts: list[tuple[tuple[int, int], tuple[int, int]]] = []
+    original_draft = JpegImagePlugin.JpegImageFile.draft
+
+    def spy(self, mode, size):  # type: ignore[no-untyped-def]
+        result = original_draft(self, mode, size)
+        if mode == "RGB":
+            drafts.append((size, self.size))
+        return result
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "draft", spy)
+    out = tmp_path / "display.jpg"
+    assert make_display_jpeg(path, out) == (1506, 2000)
+    # Asked for the stored-orientation target; decoded at half scale (2040x1536).
+    assert drafts == [((2000, 1506), (2040, 1536))]
+    with Image.open(out) as im:
+        rgb = im.convert("RGB")
+        # Rotated clockwise: the stored left half is now the top half.
+        assert rgb.getpixel((753, 300))[0] > 150 and rgb.getpixel((753, 1700))[2] > 150

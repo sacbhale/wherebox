@@ -9,13 +9,17 @@ wait for a tap in the review queue. At most one proposal per item is open (``one
 
 ``apply_reconcile`` re-reads the direct items in the worker's apply transaction; a matched id
 that is not one of them (hallucinated, moved away, used up) is treated as unmatched.
+New items get their boxes on the call's photos; a matched item's boxes are replaced per photo
+(only on the photos where this call boxed it, ``boxes.replace_boxes``; spec-multiphoto:
+reconcile also gets boxes). The proposal rules are unchanged.
 """
 
 import sqlite3
 from typing import Any
 
 from app.ai.schemas import ExtractResult
-from app.capture.apply import CaptureFailed, insert_extracted, is_uncertain
+from app.capture import boxes
+from app.capture.apply import CaptureFailed, insert_with_boxes, is_uncertain
 from app.config import Settings
 from app.db.timestamps import NOW
 from app.inventory import locations, search
@@ -69,7 +73,7 @@ def apply_reconcile(
     settings: Settings,
     capture: sqlite3.Row,
     result: ExtractResult,
-    photo_id: int | None,
+    image_photo_ids: list[int],
     extras: dict[str, Any],
 ) -> list[int]:
     """Runs inside the worker's write_tx. Returns the ids of the new items."""
@@ -77,23 +81,27 @@ def apply_reconcile(
     existing = {row["id"]: row for row in existing_items(conn, location_id)}
     sent = {entry["id"] for entry in extras["existing_items"]}
     seen: dict[int, int] = {}  # existing item id -> counted quantity
+    seen_boxes: dict[int, list[boxes.PhotoBox]] = {}
     new_ids: list[int] = []
     for extracted in result.items:
         matched = extracted.matched_existing_id
         if matched is not None and matched in existing:
             seen[matched] = seen.get(matched, 0) + extracted.quantity
+            seen_boxes.setdefault(matched, []).extend(boxes.photo_boxes(extracted, image_photo_ids))
             continue
         new_ids.append(
-            insert_extracted(
+            insert_with_boxes(
                 conn,
                 capture,
                 extracted,
+                image_photo_ids,
                 location_id=location_id,
                 needs_review=is_uncertain(extracted, settings),
-                photo_id=photo_id,
             )
         )
     capture_id = capture["id"]
+    for item_id, found in seen_boxes.items():
+        boxes.replace_boxes(conn, item_id, capture_id, found)
     for item_id, quantity in seen.items():
         conn.execute(f"UPDATE items SET last_seen_at = {NOW} WHERE id = ?", (item_id,))
         conn.execute(

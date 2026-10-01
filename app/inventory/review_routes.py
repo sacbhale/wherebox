@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.auth.csrf import require_htmx
 from app.auth.sessions import now as request_now
-from app.capture import service
+from app.capture import boxes, service
 from app.capture.routes import wake_worker
 from app.db.deps import Conn
 from app.inventory import items, review
@@ -19,8 +19,6 @@ from app.templating import templates
 router = APIRouter()
 
 HTMX = [Depends(require_htmx)]
-# Photos that browsers render as a thumbnail (HEIC originals have a JPEG display copy).
-THUMBNAIL_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
 
 def _gone() -> Response:
@@ -35,22 +33,32 @@ def _require(done: bool, detail: str) -> Response:
 
 @router.get("/review")
 def review_page(request: Request, conn: Conn) -> Response:
+    flagged = review.flagged_items(conn)
     return templates.TemplateResponse(
         request,
         "review.html",
         {
             "failed": review.failed_captures(conn),
-            "flagged": review.flagged_items(conn),
+            "flagged": flagged,
+            # Flagged items with a box show a crop of it (spec-multiphoto Part 5).
+            "crops": boxes.review_crops(conn, [row["id"] for row in flagged]),
             "missing": review.open_proposals(conn, "missing"),
             "quantity": review.open_proposals(conn, "quantity"),
-            "thumbnail_suffixes": THUMBNAIL_SUFFIXES,
+            "thumbnail_suffixes": boxes.THUMBNAIL_SUFFIXES,
         },
     )
 
 
 @router.post("/review/captures/{capture_id}/retry", dependencies=HTMX)
 def review_retry(request: Request, conn: Conn, capture_id: int) -> Response:
-    done = service.retry(conn, capture_id, request_now(request))
+    """Re-queue a failed capture (the row goes away). A failed extension that no longer fits
+    its group answers 409 with the message partial, shown in the row (data-show-errors)."""
+    try:
+        done = service.retry(conn, capture_id, request_now(request))
+    except service.RetryRefused as exc:
+        return templates.TemplateResponse(
+            request, "capture_message.html", {"message": str(exc)}, status_code=409
+        )
     if done:
         wake_worker(request)
     return _require(done, "no failed capture to retry")
@@ -89,7 +97,9 @@ def review_dismiss_quantity(conn: Conn, proposal_id: int) -> Response:
 @router.get("/photos/{photo_id}")
 def photo_file(request: Request, conn: Conn, photo_id: int) -> Response:
     """A stored capture photo (its display JPEG when there is one). The path comes from the
-    database and must resolve inside DATA_DIR/photos, so it can never escape that directory."""
+    database and must resolve inside DATA_DIR/photos, so it can never escape that directory.
+    Cached for a day once the display JPEG exists; before that only for a minute, so a page
+    opened before the worker prepared the photo does not keep the original for a day."""
     row = review.photo(conn, photo_id)
     if row is None:
         raise HTTPException(status_code=404, detail="photo not found")
@@ -98,7 +108,11 @@ def photo_file(request: Request, conn: Conn, photo_id: int) -> Response:
     path = (settings.data_dir / (row["display_rel_path"] or row["rel_path"])).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         raise HTTPException(status_code=404, detail="photo not found")
+    max_age = 86400 if row["display_rel_path"] else 60
     return FileResponse(
         path,
-        headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"},
+        headers={
+            "Cache-Control": f"private, max-age={max_age}",
+            "X-Content-Type-Options": "nosniff",
+        },
     )

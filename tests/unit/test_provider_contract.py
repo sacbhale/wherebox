@@ -1,7 +1,8 @@
 """Shared contract tests: every provider behaves the same for the same scenario (AC-26).
 
 Each scenario is set up per provider: FakeProvider is scripted with the equivalent step, the
-Anthropic adapter answers from a recorded response over httpx MockTransport (no network).
+Anthropic and OpenRouter adapters answer from recorded responses over httpx MockTransport (no
+network). Token counts must match; OpenRouter also reports ``cost_usd``.
 """
 
 from collections.abc import Callable
@@ -24,7 +25,9 @@ from app.ai.schemas import (
     ExtractResult,
     ToolOutput,
     Usage,
+    strict_json_schema,
 )
+from tests.unit import openrouter_mock
 from tests.unit.anthropic_mock import build_mock_anthropic, recorded, reply_json, reply_timeout
 
 SCENARIOS = ["success", "invalid_output", "rate_limited", "server_error", "bad_request", "timeout"]
@@ -64,11 +67,32 @@ _ANTHROPIC_REPLIES = {
 }
 
 
-@pytest.fixture(params=["fake", "anthropic"])
+_OPENROUTER_REPLIES = {
+    "success": openrouter_mock.reply_json(200, "tools_success"),
+    "invalid_output": openrouter_mock.reply_json(200, "invalid_output"),
+    "rate_limited": openrouter_mock.reply_json(429, "error_429"),
+    "server_error": openrouter_mock.reply_json(500, "error_500"),
+    "bad_request": openrouter_mock.reply_json(400, "error_400"),
+    "timeout": openrouter_mock.reply_timeout,
+}
+
+
+def _openrouter(scenario: str) -> AIProvider:
+    reply = _OPENROUTER_REPLIES[scenario]
+    return openrouter_mock.build_mock_openrouter(reply, openrouter_mock.model_info()).provider
+
+
+@pytest.fixture(params=["fake", "anthropic", "openrouter"])
 def make_provider(request: pytest.FixtureRequest) -> Callable[[str], AIProvider]:
     if request.param == "fake":
         return _fake
+    if request.param == "openrouter":
+        return _openrouter
     return lambda scenario: build_mock_anthropic(_ANTHROPIC_REPLIES[scenario]).provider
+
+
+def _tokens(usage: Usage | None) -> tuple[int, int] | None:
+    return None if usage is None else (usage.input_tokens, usage.output_tokens)
 
 
 def _request() -> ExtractRequest:
@@ -91,13 +115,13 @@ def test_success_returns_validated_items_and_usage(
         ("Duct tape", 1, "belonging"),
     ]
     assert all(0 <= item.confidence <= 1 for item in result.items)
-    assert result.usage == SUCCESS_USAGE
+    assert _tokens(result.usage) == _tokens(SUCCESS_USAGE)
 
 
 def test_invalid_output_carries_usage_and_raw(make_provider: Callable[[str], AIProvider]) -> None:
     with pytest.raises(ProviderInvalidOutput) as info:
         make_provider("invalid_output").extract(_request())
-    assert info.value.usage == INVALID_USAGE
+    assert _tokens(info.value.usage) == _tokens(INVALID_USAGE)
     assert info.value.raw
 
 
@@ -124,6 +148,7 @@ def test_timeout_is_transient_without_usage(make_provider: Callable[[str], AIPro
 
 def test_every_scenario_is_covered() -> None:
     assert set(_ANTHROPIC_REPLIES) == set(SCENARIOS)
+    assert set(_OPENROUTER_REPLIES) == set(SCENARIOS)
     for scenario in SCENARIOS:
         _fake(scenario)
 
@@ -135,3 +160,32 @@ def test_tool_schema_matches_tool_output_model() -> None:
     assert set(item_schema["required"]) == required
     assert set(TOOL_INPUT_SCHEMA["properties"]) == set(ToolOutput.model_fields)
     assert "$ref" not in str(TOOL_INPUT_SCHEMA)
+
+
+def test_strict_json_schema() -> None:
+    strict = strict_json_schema()
+    item = strict["properties"]["items"]["items"]
+    receipt = strict["properties"]["receipt"]
+    for node in (strict, item, receipt):
+        assert node["additionalProperties"] is False
+        assert node["required"] == list(node["properties"])
+    # Optional properties were already nullable, so requiring them loses nothing.
+    optional = set(item["properties"]) - set(
+        TOOL_INPUT_SCHEMA["properties"]["items"]["items"]["required"]
+    )
+    for name in optional:
+        assert "null" in item["properties"][name]["type"], name
+    assert "null" in receipt["type"]
+    text = str(strict)
+    for bound in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+        assert bound not in text
+    assert "$ref" not in text
+    assert item["properties"]["kind"]["enum"] == ["consumable", "belonging"]
+    # The tool schema itself is untouched, and each call returns a fresh copy.
+    assert TOOL_INPUT_SCHEMA["properties"]["items"]["items"]["properties"]["quantity"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
+    assert "additionalProperties" not in TOOL_INPUT_SCHEMA
+    strict["properties"].clear()
+    assert strict_json_schema()["properties"]

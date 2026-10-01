@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Comparison case · Inventory{% endblock %}
+{% block content %}
+<p class="links"><a href="/compare">← Model comparison</a></p>
+<h1>{{ "Edit comparison case" if case else "New comparison case" }}</h1>
+<p class="muted" id="case-capture">{{ capture.type|capitalize }} capture of {{ capture.created_at[:16] | replace("T", " ") }} UTC
+  {%- if capture.location_name %} · {{ capture.location_name }}{% endif %}
+  {%- if capture.model %} · captured with <code>{{ capture.model }}</code>{% endif %}</p>
+{% if photo_id %}
+<p><a href="/photos/{{ photo_id }}" class="button secondary" target="_blank" rel="noopener">Open the original {{ "receipt" if receipt else "photo" }}</a></p>
+{% elif capture.input_text %}
+<blockquote class="case-text" id="case-input-text">{{ capture.input_text }}</blockquote>
+{% endif %}
+<p>List what the {{ "receipt" if receipt else ("photo" if photo_id else "text") }} really contains: fix names
+  and counts, remove wrong rows, add missed items. Every model is scored against this list.</p>
+{% if changed %}<p class="notice" id="case-prefill-hint">Some of this capture's items were edited,
+  moved or used up since it was captured: check this list against the original input.</p>{% endif %}
+{% if errors %}
+<ul class="warnings" id="case-errors">{% for error in errors %}<li class="error">{{ error }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% macro row(item) -%}
+<div class="case-row{% if receipt %} with-price{% endif %}">
+  <input name="name" value="{{ item.name }}" aria-label="Item name" placeholder="Item name" maxlength="200">
+  <input name="quantity" value="{{ item.quantity or 1 }}" aria-label="Quantity" inputmode="numeric" pattern="[0-9]*">
+  {% if receipt %}<input name="price" value="{{ item.price }}" aria-label="Price" placeholder="Price" inputmode="decimal">{% endif %}
+  <button type="button" class="secondary remove-row" data-remove-row aria-label="Remove row">✕</button>
+</div>
+{%- endmacro %}
+
+<form method="post" action="{{ '/compare/cases/%d' % case.id if case else '/compare/cases' }}" class="stack" id="case-form">
+  {% if not case %}<input type="hidden" name="capture_id" value="{{ capture.id }}">{% endif %}
+  <div class="case-rows" id="case-rows">
+    {% for item in rows %}{{ row(item) }}{% endfor %}
+    {{ row({"name": "", "quantity": "1", "price": ""}) }}
+  </div>
+  <template id="case-row-template">{{ row({"name": "", "quantity": "1", "price": ""}) }}</template>
+  <button type="button" class="secondary" id="case-add-row" data-add-row="case-row-template" data-rows="#case-rows">Add item</button>
+  <button type="submit" id="case-save">Save case</button>
+</form>
+{% if case %}
+<form method="post" action="/compare/cases/{{ case.id }}/delete" class="case-delete">
+  <button type="submit" class="danger" id="case-delete">Delete case</button>
+</form>
+<p class="muted">Deleting keeps the case in past reports; new comparisons skip it.</p>
+{% endif %}
+{% endblock %}

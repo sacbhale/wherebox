@@ -1,0 +1,25 @@
+{# The multi-photo tray (spec-multiphoto Part 5, R13): the inside of a photo, reconcile or
+   "add another angle" form marked data-tray. "Take photo" opens the camera (one photo at a
+   time; iOS ignores ``multiple`` on a camera input), "Choose photos" the library (several at
+   once). The picker inputs have no name: app.js keeps the chosen files, shows thumbnails
+   (object URLs) with a remove button, and appends them as ``photos`` to the htmx request.
+   Send stays disabled until a photo is in the tray; nothing is sent on change.
+   ``max``: photos this form may send at once (the element carrying data-tray-max may be
+   replaced out of band, e.g. after another angle was added; app.js re-renders the tray).
+   ``room``: ``max`` is the capture group's remaining room, not the per-send limit. #}
+{% macro tray(prefix, take_id=None, max=max_photos_per_send, disabled=False, room=False) %}
+<div class="tray-pickers">
+  <label class="button tray-pick">Take photo
+    <input type="file" accept="image/*" capture="environment" data-tray-input
+           {% if take_id %}id="{{ take_id }}"{% endif %} {% if disabled %}disabled data-blocked{% endif %}>
+  </label>
+  <label class="button secondary tray-pick">Choose photos
+    <input type="file" accept="image/*" multiple data-tray-input {% if disabled %}disabled data-blocked{% endif %}>
+  </label>
+</div>
+<span id="{{ prefix }}-max" data-tray-max="{{ max }}"{% if room %} data-tray-room{% endif %} hidden></span>
+<ul class="tray-thumbs" id="{{ prefix }}-thumbs" data-tray-thumbs aria-label="Photos to send"></ul>
+<p class="muted tray-count" id="{{ prefix }}-count" data-tray-count aria-live="polite">No photos yet ({{ "this capture has room for " if room else "up to " }}{{ max }}).</p>
+<button type="submit" class="tray-send" id="{{ prefix }}-send" data-tray-send disabled>Send (0 photos)</button>
+<div class="form-message" id="{{ prefix }}-message" data-form-message></div>
+{% endmacro %}

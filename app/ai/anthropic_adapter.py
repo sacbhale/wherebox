@@ -12,8 +12,11 @@ from app.ai import prompts
 from app.ai.provider import (
     ProviderInvalidOutput,
     ProviderPermanentError,
+    ProviderRateLimited,
     ProviderTimeoutError,
     ProviderTransientError,
+    bounded,
+    parse_retry_after,
 )
 from app.ai.schemas import (
     TOOL_DESCRIPTION,
@@ -23,8 +26,10 @@ from app.ai.schemas import (
     ExtractResult,
     ToolOutput,
     Usage,
+    output_cap,
 )
 
+# Receipts and text; the photo modes get schemas.output_cap (16,384).
 DEFAULT_MAX_TOKENS = 4096
 # 408 request timeout, 409 conflict and 429 rate limit are worth retrying; so is any 5xx
 # (500, 502, 503, 504, 529 overloaded).
@@ -43,28 +48,34 @@ class AnthropicProvider:
         http_client: httpx2.Client | None = None,
     ) -> None:
         self.model = model
-        self._max_tokens = max_tokens
+        self.max_tokens = max_tokens
         # max_retries=0: the capture worker owns retries (re-queue with not_before), so one
         # extract() is exactly one billed call and one ledger row.
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=0, http_client=http_client)
 
+    def max_tokens_for(self, req: ExtractRequest) -> int:
+        """The output cap of this request (larger for the photo modes)."""
+        return output_cap(req.mode, self.max_tokens)
+
     def extract(self, req: ExtractRequest) -> ExtractResult:
-        content: list[dict[str, Any]] = [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": base64.b64encode(image).decode("ascii"),
-                },
-            }
-            for image in req.images
-        ]
+        content: list[dict[str, Any]] = []
+        for index, image in enumerate(req.images):
+            content.append({"type": "text", "text": prompts.image_label(index)})
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64.b64encode(image).decode("ascii"),
+                    },
+                }
+            )
         content.append({"type": "text", "text": prompts.user_text(req)})
         try:
             message = self._client.messages.create(
                 model=self.model,
-                max_tokens=self._max_tokens,
+                max_tokens=self.max_tokens_for(req),
                 system=prompts.system_prompt(req.mode),
                 messages=[{"role": "user", "content": content}],  # type: ignore[list-item]
                 tools=[
@@ -82,9 +93,12 @@ class AnthropicProvider:
         except anthropic.APIConnectionError as exc:
             raise ProviderTransientError(f"connection error: {exc}") from exc
         except anthropic.APIStatusError as exc:
-            detail = f"HTTP {exc.status_code}: {exc.message}"
+            detail = bounded(f"HTTP {exc.status_code}: {exc.message}")
+            retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
+            if exc.status_code == 429:
+                raise ProviderRateLimited(detail, retry_after=retry_after) from exc
             if exc.status_code in _TRANSIENT_4XX or exc.status_code >= 500:
-                raise ProviderTransientError(detail) from exc
+                raise ProviderTransientError(detail, retry_after=retry_after) from exc
             raise ProviderPermanentError(detail) from exc
         except anthropic.AnthropicError as exc:
             raise ProviderPermanentError(f"{type(exc).__name__}: {exc}") from exc

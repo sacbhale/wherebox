@@ -1,15 +1,20 @@
-{# Capture forms, loaded into the location page and home. Error answers (4xx) carry a message
-   partial, so the forms swap them in too. #}
+{# Capture forms, loaded into the location page and home. Capture needs JavaScript (htmx).
+   Photo and reconcile forms hold a photo tray (partials/photo_tray.html): nothing is sent
+   until Send, which stays disabled until a photo is in the tray. Their 4xx message partials
+   are shown inside the form that posted (data-show-errors + data-error-target, app.js) and
+   scrolled into view; results go to the list below. The receipt form keeps one file input
+   that sends on change, only when a file was chosen. #}
+{% from "partials/photo_tray.html" import tray %}
 {% set swap_errors = "if(event.detail.xhr.status<500){event.detail.shouldSwap=true;event.detail.isError=false}" %}
 {% set reset_on_success = "if(event.detail.successful){this.reset()}" %}
+{% set require_file = "if(!this.querySelector('input[type=file]').files.length){event.preventDefault()}" %}
 <section class="panel capture" id="capture">
   <h2>Capture</h2>
   {% if blocked %}<p class="error" id="capture-blocked" role="alert">{{ blocked }} <a href="/items/new{% if location %}?loc={{ location.id }}{% endif %}">Add an item manually</a></p>{% endif %}
 
   <form class="capture-form" id="capture-photo" hx-post="/captures/photo" hx-encoding="multipart/form-data"
-        hx-target="#capture-results" hx-swap="afterbegin"
-        hx-trigger="submit, change from:find input[type=file]"
-        hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
+        hx-target="#capture-results" hx-swap="afterbegin show:#capture-results:top"
+        onsubmit="return false" data-tray data-show-errors data-error-target="#capture-photo-message">
     {% if location %}
     <input type="hidden" name="location_id" value="{{ location.id }}">
     {% else %}
@@ -19,39 +24,34 @@
       </select>
     </label>
     {% endif %}
-    <label>Photo of a shelf, drawer or box
-      <input type="file" name="photo" accept="image/*" capture="environment" id="capture-photo-input" {% if blocked %}disabled{% endif %}>
-    </label>
-    <button type="submit" {% if blocked %}disabled{% endif %}>Add from photo</button>
+    <p class="tray-title">Photos of a shelf, drawer or box <span class="muted">(several angles of the same place are fine)</span></p>
+    {{ tray("capture-photo", "capture-photo-input", disabled=blocked) }}
   </form>
 
   {% if location %}
   <form class="capture-form" id="capture-reconcile" hx-post="/captures/reconcile" hx-encoding="multipart/form-data"
-        hx-target="#capture-results" hx-swap="afterbegin"
-        hx-trigger="submit, change from:find input[type=file]"
-        hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
+        hx-target="#capture-results" hx-swap="afterbegin show:#capture-results:top"
+        onsubmit="return false" data-tray data-show-errors data-error-target="#capture-reconcile-message">
     <input type="hidden" name="location_id" value="{{ location.id }}">
-    <label>Reconcile: photo of everything in {{ location.name }} (new items are added, changes go to Review)
-      <input type="file" name="photo" accept="image/*" capture="environment" id="capture-reconcile-input" {% if blocked %}disabled{% endif %}>
-    </label>
-    <button type="submit" {% if blocked %}disabled{% endif %}>Reconcile from photo</button>
+    <p class="tray-title">Reconcile: photos of everything in {{ location.name }} <span class="muted">(new items are added, changes go to Review)</span></p>
+    {{ tray("capture-reconcile", "capture-reconcile-input", disabled=blocked) }}
   </form>
   {% endif %}
 
   {% if not location %}
   <form class="capture-form" id="capture-receipt" hx-post="/captures/receipt" hx-encoding="multipart/form-data"
-        hx-target="#capture-results" hx-swap="afterbegin"
-        hx-trigger="submit, change from:find input[type=file]"
+        hx-target="#capture-results" hx-swap="afterbegin show:#capture-results:top"
+        hx-trigger="change from:find input[type=file]" onsubmit="return false"
+        hx-on::config-request="{{ require_file }}"
         hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
     <label>Receipt (photo or PDF, items go to the Inbox)
       <input type="file" name="receipt" accept="image/*,application/pdf" {% if blocked %}disabled{% endif %}>
     </label>
-    <button type="submit" {% if blocked %}disabled{% endif %}>Add from receipt</button>
   </form>
   {% endif %}
 
   <form class="capture-form" id="capture-text" hx-post="/captures/text"
-        hx-target="#capture-results" hx-swap="afterbegin"
+        hx-target="#capture-results" hx-swap="afterbegin show:#capture-results:top"
         hx-on::before-swap="{{ swap_errors }}" hx-on::after-request="{{ reset_on_success }}">
     {% if location %}<input type="hidden" name="location_id" value="{{ location.id }}">{% endif %}
     <label for="capture-text-input">Or type (or say) what you have</label>
@@ -65,8 +65,9 @@
   </form>
   <script src="/static/voice.js" defer></script>
 
-  <div id="capture-results" aria-live="polite">
-    {% for capture in active %}{% with position = positions[capture.id], outcome = [] %}{% include "partials/capture_status.html" %}{% endwith %}{% endfor %}
+  {# Not a live region itself: each status's summary is (role="status"), its gallery not. #}
+  <div id="capture-results">
+    {% for capture in active %}{% with position = positions[capture.id], outcome = [], view = "panel" %}{% include "partials/capture_status.html" %}{% endwith %}{% endfor %}
   </div>
   <p class="links"><a href="/captures">Recent captures</a></p>
 </section>

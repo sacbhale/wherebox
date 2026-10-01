@@ -12,6 +12,7 @@ from tests.capture_helpers import (
     capture_id,
     capture_items,
     capture_row,
+    empty_file_input,
     item,
     result,
     run,
@@ -226,7 +227,10 @@ def test_reconcile_against_a_deleted_location_fails_before_any_provider_call(
 
 def test_reconcile_endpoint_validates_input(auth_client, auth_settings, shelf):
     no_photo = auth_client.post(
-        "/captures/reconcile", headers=HX, data={"location_id": str(shelf["shelf"])}
+        "/captures/reconcile",
+        headers=HX,
+        data={"location_id": str(shelf["shelf"])},
+        files=[empty_file_input("photos")],
     )
     assert no_photo.status_code == 400
     no_location = auth_client.post(

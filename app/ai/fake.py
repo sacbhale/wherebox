@@ -4,6 +4,7 @@ The script is a queue of steps; each extract() call records the request and cons
 step. The JSON format read from FAKE_AI_SCRIPT is documented in docs/ai-provider-contract.md.
 """
 
+import copy
 import json
 import threading
 import time
@@ -17,6 +18,7 @@ from app.ai.provider import (
     ProviderError,
     ProviderInvalidOutput,
     ProviderPermanentError,
+    ProviderRateLimited,
     ProviderTimeoutError,
     ProviderTransientError,
 )
@@ -25,6 +27,8 @@ from app.ai.schemas import ExtractRequest, ExtractResult, Usage
 DEFAULT_MODEL = "fake-model"
 # How long past the request's timeout a "timeout" step sleeps before raising, in seconds.
 TIMEOUT_OVERSHOOT_S = 0.01
+# Default message of a "rate_limited" step (what OpenRouter says for an upstream 429).
+RATE_LIMITED_MESSAGE = "OpenRouter HTTP 429: Provider returned error"
 
 
 @dataclass(frozen=True)
@@ -44,7 +48,32 @@ class FakeStep:
 Scriptable = ExtractResult | BaseException | FakeStep
 
 
+class _Script:
+    """A queue of steps plus its repeat-last behaviour."""
+
+    def __init__(self, steps: Iterable[Scriptable], repeat_last: bool) -> None:
+        self.queue: deque[FakeStep] = deque(
+            step if isinstance(step, FakeStep) else FakeStep(outcome=step) for step in steps
+        )
+        self.repeat_last = repeat_last
+        self.last: FakeStep | None = None
+
+
+class _State:
+    """What every model view of one FakeProvider shares: scripts, lock, recorded requests."""
+
+    def __init__(self, default: _Script, models: dict[str, _Script]) -> None:
+        self.default = default
+        self.models = models
+        self.requests: list[ExtractRequest] = []
+        self.lock = threading.Lock()
+
+
 class FakeProvider:
+    """``models`` maps a model id to its own script; any other model uses ``script``.
+    ``with_model(id)`` returns a view reporting that model that shares this provider's
+    scripts and request log, so one FAKE_AI_SCRIPT is consumed across model changes."""
+
     name = "fake"
 
     def __init__(
@@ -55,33 +84,50 @@ class FakeProvider:
         delay_s: float = 0.0,
         repeat_last: bool = False,
         sleep: Callable[[float], None] = time.sleep,
+        models: dict[str, Iterable[Scriptable]] | None = None,
     ) -> None:
         self.model = model
         self.delay_s = delay_s
-        self.repeat_last = repeat_last
-        self.requests: list[ExtractRequest] = []
         self._sleep = sleep
-        self._queue: deque[FakeStep] = deque()
-        self._last: FakeStep | None = None
-        self._lock = threading.Lock()
-        for step in script:
-            self.push(step)
+        self._state = _State(
+            _Script(script, repeat_last),
+            {model_id: _Script(steps, repeat_last) for model_id, steps in (models or {}).items()},
+        )
+
+    def with_model(self, model: str) -> "FakeProvider":
+        view = copy.copy(self)
+        view.model = model
+        return view
+
+    @property
+    def requests(self) -> list[ExtractRequest]:
+        return self._state.requests
+
+    @property
+    def repeat_last(self) -> bool:
+        return self._state.default.repeat_last
+
+    def _script(self) -> _Script:
+        return self._state.models.get(self.model, self._state.default)
 
     def push(self, step: Scriptable) -> None:
-        with self._lock:
-            self._queue.append(step if isinstance(step, FakeStep) else FakeStep(outcome=step))
+        with self._state.lock:
+            self._script().queue.append(
+                step if isinstance(step, FakeStep) else FakeStep(outcome=step)
+            )
 
     @property
     def remaining(self) -> int:
-        return len(self._queue)
+        return len(self._script().queue)
 
     def _next_step(self) -> FakeStep:
-        with self._lock:
-            if self._queue:
-                self._last = self._queue.popleft()
-                return self._last
-            if self.repeat_last and self._last is not None:
-                return self._last
+        with self._state.lock:
+            script = self._script()
+            if script.queue:
+                script.last = script.queue.popleft()
+                return script.last
+            if script.repeat_last and script.last is not None:
+                return script.last
         raise ProviderPermanentError("fake provider script exhausted")
 
     def extract(self, req: ExtractRequest) -> ExtractResult:
@@ -118,8 +164,16 @@ def parse_step(data: dict[str, Any]) -> FakeStep:
         outcome = ExtractResult.model_validate(result)
     elif error == "timeout":
         return FakeStep(delay_s=delay_s, timeout=True)
-    elif error == "transient":
-        outcome = ProviderTransientError(message, usage=_usage(data.get("usage")))
+    elif error in ("transient", "rate_limited"):
+        retry_after = data.get("retry_after_s")
+        kind = ProviderTransientError
+        if error == "rate_limited":
+            kind, message = ProviderRateLimited, message or RATE_LIMITED_MESSAGE
+        outcome = kind(
+            message,
+            usage=_usage(data.get("usage")),
+            retry_after=None if retry_after is None else float(retry_after),
+        )
     elif error == "permanent":
         outcome = ProviderPermanentError(message, usage=_usage(data.get("usage")))
     elif error == "invalid_output":
@@ -133,15 +187,28 @@ def parse_step(data: dict[str, Any]) -> FakeStep:
     return FakeStep(outcome=outcome, delay_s=delay_s)
 
 
-def load_script(path: str | Path, **kwargs: Any) -> FakeProvider:
-    """Build a FakeProvider from a FAKE_AI_SCRIPT JSON file."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+def _steps(data: Any, where: str) -> list[FakeStep]:
     if not isinstance(data, dict) or not isinstance(data.get("steps"), list):
-        raise ValueError(f"{path}: fake script must be an object with a 'steps' list")
+        raise ValueError(f"{where}: fake script must be an object with a 'steps' list")
+    return [parse_step(step) for step in data["steps"]]
+
+
+def load_script(path: str | Path, **kwargs: Any) -> FakeProvider:
+    """Build a FakeProvider from a FAKE_AI_SCRIPT JSON file (optional per-model scripts in
+    ``"models": {"<id>": {"steps": [...]}}``)."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    steps = _steps(data, str(path))
+    models = data.get("models") or {}
+    if not isinstance(models, dict):
+        raise ValueError(f"{path}: 'models' must be an object of model id -> script")
     return FakeProvider(
-        [parse_step(step) for step in data["steps"]],
+        steps,
         model=str(data.get("model", DEFAULT_MODEL)),
         delay_s=float(data.get("delay_s", 0.0)),
         repeat_last=bool(data.get("repeat_last", False)),
+        models={
+            str(model_id): _steps(script, f"{path} models[{model_id!r}]")
+            for model_id, script in models.items()
+        },
         **kwargs,
     )

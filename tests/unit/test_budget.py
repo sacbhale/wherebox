@@ -1,19 +1,24 @@
 """Usage ledger and monthly budget: TZ month windows, cost math, exhaustion (AC-23, AC-24)."""
 
+import logging
 import sqlite3
 from datetime import UTC, datetime
 
 import pytest
 
+from app.ai.openrouter_catalog import ModelInfo
 from app.ai.schemas import Usage
 from app.capture.budget import (
     budget_exhausted,
     cost_micros,
+    cost_micros_for,
+    insert_ai_call,
     month_usage,
     month_window,
     record_ai_call,
 )
 from app.config import Settings
+from app.db.connection import write_tx
 from app.db.timestamps import utc_iso
 from tests.conftest import SettingsFactory
 
@@ -114,6 +119,8 @@ def test_record_ai_call_writes_ledger_row(
         "output_tokens": 10,
         "cost_micros": 450,
         "outcome": "invalid_output",
+        "comparison_result_id": None,
+        "image_count": None,
     }
     assert not conn.in_transaction
 
@@ -210,3 +217,75 @@ def test_zero_budget_is_exhausted_immediately(
 ) -> None:
     settings = make_settings(monthly_ai_budget=0, **PRICED)
     assert budget_exhausted(conn, settings, datetime(2026, 9, 15, tzinfo=UTC))
+
+
+INFO = ModelInfo(
+    id="vendor/model",
+    name="Model",
+    context_length=None,
+    prompt_usd_per_mtok=0.5,
+    completion_usd_per_mtok=2.0,
+    accepts_images=True,
+    strategy="tools",
+)
+
+
+def test_cost_micros_for_prefers_reported_cost(make_settings: SettingsFactory) -> None:
+    priced = make_settings(**PRICED)
+    tokens = {"input_tokens": 1000, "output_tokens": 100}
+    # 1. reported cost wins over everything
+    assert cost_micros_for(Usage(**tokens, cost_usd=0.0125), priced, INFO) == 12_500
+    assert cost_micros_for(Usage(**tokens, cost_usd=0.0), priced, INFO) == 0
+    # 2. catalog prices when no cost was reported (1000 * 0.5 + 100 * 2 micros)
+    assert cost_micros_for(Usage(**tokens), priced, INFO) == 700
+    # 3. env prices (1000 * 3 + 100 * 15)
+    assert cost_micros_for(Usage(**tokens), priced) == 4_500
+    unknown = ModelInfo(**(INFO.__dict__ | {"prompt_usd_per_mtok": None}))
+    assert cost_micros_for(Usage(**tokens), priced, unknown) == 4_500
+    # 4. nothing known: 0
+    assert cost_micros_for(Usage(**tokens), make_settings()) == 0
+
+
+def test_openrouter_calls_never_use_the_anthropic_env_prices(
+    make_settings: SettingsFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    priced = make_settings(**PRICED)
+    tokens = {"input_tokens": 1000, "output_tokens": 100}
+    assert cost_micros_for(Usage(**tokens), priced, INFO, provider="openrouter") == 700
+    with caplog.at_level(logging.ERROR):
+        assert cost_micros_for(Usage(**tokens), priced, None, provider="openrouter") == 0
+    assert any(r.levelno == logging.ERROR for r in caplog.records)
+    assert cost_micros_for(Usage(**tokens), priced, provider="anthropic") == 4_500
+
+
+def test_insert_ai_call_inside_an_existing_transaction(
+    conn: sqlite3.Connection, make_settings: SettingsFactory
+) -> None:
+    settings = make_settings()
+    when = datetime(2026, 9, 3, 8, 0, tzinfo=UTC)
+    with write_tx(conn):
+        row_id = insert_ai_call(
+            conn,
+            settings,
+            None,
+            when,
+            Usage(input_tokens=10, output_tokens=2, cost_usd=0.001),
+            "ok",
+            comparison_result_id=7,
+        )
+        assert conn.in_transaction
+    row = conn.execute("SELECT * FROM ai_calls WHERE id = ?", (row_id,)).fetchone()
+    assert row["comparison_result_id"] == 7 and row["cost_micros"] == 1_000
+    with pytest.raises(ValueError):
+        insert_ai_call(conn, settings, None, when, None, "weird")
+
+
+def test_record_ai_call_uses_catalog_price_fallback(
+    conn: sqlite3.Connection, make_settings: SettingsFactory
+) -> None:
+    when = datetime(2026, 9, 3, 8, 0, tzinfo=UTC)
+    row_id = record_ai_call(
+        conn, make_settings(), None, when, Usage(input_tokens=1000), "ok", model_info=INFO
+    )
+    row = conn.execute("SELECT * FROM ai_calls WHERE id = ?", (row_id,)).fetchone()
+    assert (row["cost_micros"], row["comparison_result_id"]) == (500, None)

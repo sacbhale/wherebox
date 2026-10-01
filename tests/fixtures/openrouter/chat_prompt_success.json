@@ -1,0 +1,41 @@
+{
+  "id": "gen-1790700000-AbCdEfGhIjKlMnOpQrSt",
+  "provider": "Google",
+  "model": "google/gemini-3.1-flash-lite",
+  "object": "chat.completion",
+  "created": 1790700000,
+  "choices": [
+    {
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Here is the inventory:\n```json\n{\n  \"items\": [\n    {\n      \"name\": \"Pasta\",\n      \"quantity\": 3,\n      \"category\": \"Food\",\n      \"kind\": \"consumable\",\n      \"confidence\": 0.92,\n      \"location_hint\": null,\n      \"price_cents\": null,\n      \"purchase_date\": null,\n      \"matched_existing_id\": null\n    },\n    {\n      \"name\": \"Duct tape\",\n      \"quantity\": 1,\n      \"category\": \"Tools\",\n      \"kind\": \"belonging\",\n      \"confidence\": 0.55,\n      \"location_hint\": null,\n      \"price_cents\": null,\n      \"purchase_date\": null,\n      \"matched_existing_id\": null\n    }\n  ]\n}\n```\nLet me know if you need more.",
+        "refusal": null,
+        "reasoning": null
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1234,
+    "completion_tokens": 56,
+    "total_tokens": 1290,
+    "cost": 0.0003925,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": null,
+      "upstream_inference_prompt_cost": 0.0003085,
+      "upstream_inference_completions_cost": 8.4e-05
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0
+    }
+  }
+}

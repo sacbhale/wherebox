@@ -1,0 +1,26 @@
+{
+  "id": "gen-1790700001-XyZ",
+  "object": "chat.completion",
+  "created": 1790700001,
+  "model": "google/gemini-3.1-flash-lite",
+  "provider": "Google",
+  "error": {
+    "code": 502,
+    "message": "Provider returned error",
+    "metadata": {
+      "error_type": "provider_unavailable",
+      "provider_name": "Google"
+    }
+  },
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": ""
+      },
+      "finish_reason": "error",
+      "native_finish_reason": null
+    }
+  ]
+}

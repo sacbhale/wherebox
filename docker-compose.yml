@@ -11,9 +11,10 @@ services:
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1,172.16.0.0/12}
     volumes:
       - ./data:/data
-    # Published on loopback only, for a reverse proxy running on the host (never 0.0.0.0).
+    # Published on loopback by default, for a reverse proxy running on the host. Set
+    # BIND_ADDRESS=0.0.0.0 in .env for direct plain-HTTP LAN access (see docs/operations.md).
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${BIND_ADDRESS:-127.0.0.1}:8000:8000"
     # If the reverse proxy runs in Docker on a network shared with this service, remove
     # `ports:` above and use `expose:` instead, so the app is reachable only from that network:
     # expose:

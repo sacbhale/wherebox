@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai.openrouter_adapter import clear_downgrades
 from app.config import Settings
 from app.db.connection import connect
 from app.db.migrate import migrate
@@ -20,6 +21,14 @@ def _isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the developer's shell environment out of Settings."""
     for name in Settings.model_fields:
         monkeypatch.delenv(name.upper(), raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_remembered_downgrades() -> Iterator[None]:
+    """Every test starts without OpenRouter strategy downgrades remembered by another."""
+    clear_downgrades()
+    yield
+    clear_downgrades()
 
 
 @pytest.fixture

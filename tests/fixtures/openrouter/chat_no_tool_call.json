@@ -1,0 +1,27 @@
+{
+  "id": "gen-1790700000-AbCdEfGhIjKlMnOpQrSt",
+  "provider": "Google",
+  "model": "google/gemini-3.1-flash-lite",
+  "object": "chat.completion",
+  "created": 1790700000,
+  "choices": [
+    {
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I can see some pasta and tape.",
+        "refusal": null,
+        "reasoning": null
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 800,
+    "completion_tokens": 12,
+    "total_tokens": 812,
+    "cost": 0.000218
+  }
+}

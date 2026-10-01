@@ -1,0 +1,55 @@
+{# One comparison run's status, shown below the Start button (and on the report page). A
+   running run polls every 2s; the endpoint answers 286 (stop polling) with this partial once
+   it is done, failed or cancelled.
+   Context: run, progress (runs.progress), models (runs.model_progress), names (model id ->
+   name), elapsed, top (the top-ranked ModelSummary once finished, else None), from_compare
+   (on /compare with its start form: the status's own requests send ?from=compare); htmx
+   answers to those for a run that just started or finished add oob, locked and recent: the
+   start button (locked while running) and the Past comparisons list, swapped out of band. #}
+{% set from_query = "?from=compare" if from_compare else "" %}
+{% set p = progress %}
+{% set done_calls = p.ok + p.failed + p.cancelled %}
+<div class="compare-status status-{{ run.status }}" id="run-{{ run.id }}" role="status"
+     data-run-status="{{ run.status }}"
+     {% if run.status == "running" %}hx-get="/compare/runs/{{ run.id }}/status{{ from_query }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="compare-status-head">
+    <strong>Comparison #{{ run.id }}</strong>
+    <span class="muted" id="compare-elapsed">{{ elapsed }}</span>
+  </div>
+  {% if run.status == "running" %}
+  <p class="compare-overall" id="compare-overall">Running: {{ p.ok + p.failed }} of {{ p.total }} calls done{% if p.failed %} ({{ p.failed }} failed){% endif %}. Captures still go first.</p>
+  {% elif run.status == "done" %}
+  <p class="compare-overall" id="compare-overall">Finished: {{ p.ok }} of {{ p.total }} calls succeeded, {{ (p.cost_micros / 1000000)|usd }} spent.</p>
+  {% elif run.status == "failed" %}
+  <p class="compare-overall error" id="compare-overall">Stopped: {{ run.error or "failed" }}.</p>
+  {% else %}
+  <p class="compare-overall" id="compare-overall">Cancelled after {{ p.ok + p.failed }} of {{ p.total }} calls.</p>
+  {% endif %}
+  {% if top %}
+  <p class="compare-top" id="compare-top" data-model-id="{{ top.model }}">Best: <strong>{{ names[top.model] }}</strong>
+    · F1 {{ "%.2f"|format(top.mean_f1) }}{% if top.cost_per_case_micros is not none %} · {{ (top.cost_per_case_micros / 1000000)|usd }} per case{% endif %}</p>
+  {% endif %}
+  <ul class="model-progress" id="compare-model-progress">
+    {% for m in models %}
+    <li class="model-progress-row" data-model-id="{{ m.model }}">
+      <span class="model-progress-name">{{ names.get(m.model, m.model) }}</span>
+      <span class="model-progress-counts">{{ m.done }}/{{ m.total }} calls · {{ m.ok }} ok{% if m.failed %} · {{ m.failed }} failed{% endif %}{% if m.waiting %} · {{ m.waiting }} waiting to retry{% endif %}</span>
+      {% if m.error %}<span class="model-progress-error {{ 'error' if m.failed else 'muted' }}">{{ m.error }}</span>{% endif %}
+      {% if m.waiting and m.retry_in_s is not none %}<span class="model-progress-retry muted">Trying again
+        {% if m.retry_in_s == 0 %}now{% elif m.retry_in_s < 120 %}in about {{ m.retry_in_s }} s{% else %}in about {{ (m.retry_in_s / 60)|round|int }} min{% endif %}.</span>{% endif %}
+      {% if m.error_detail %}<details class="model-progress-detail"><summary>Details</summary><code>{{ m.error_detail }}</code></details>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="compare-actions">
+    {% if run.status == "running" %}
+    <button type="button" class="secondary" id="compare-cancel" hx-post="/compare/runs/{{ run.id }}/cancel{{ from_query }}"
+            hx-target="#run-{{ run.id }}" hx-swap="outerHTML">Cancel</button>
+    {% endif %}
+    <a class="button" id="compare-report-link" href="/compare/runs/{{ run.id }}">{{ "See the report" if run.status != "running" else "Results so far" }}</a>
+  </div>
+</div>
+{% if oob %}
+{% include "partials/compare_start_button.html" %}
+{% include "partials/compare_recent.html" %}
+{% endif %}

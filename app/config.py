@@ -20,10 +20,14 @@ class Settings(BaseSettings):
 
     household_password: SecretStr | None = None
 
-    ai_provider: Literal["anthropic", "fake"] = "anthropic"
-    ai_api_key: SecretStr | None = None
+    ai_provider: Literal["anthropic", "openrouter", "fake"] = "anthropic"
+    ai_api_key: SecretStr | None = None  # the Anthropic key
+    openrouter_api_key: SecretStr | None = None
     ai_model: str = "claude-sonnet-5-5"
     fake_ai_script: Path | None = None
+    # Test-only: a models JSON file (same shape as OpenRouter's /api/v1/models) read instead of
+    # fetching the catalog; it also shows the model picker under AI_PROVIDER=fake.
+    openrouter_catalog_file: Path | None = None
     ai_input_price_per_mtok: float | None = Field(default=None, ge=0)
     ai_output_price_per_mtok: float | None = Field(default=None, ge=0)
     monthly_ai_budget: float | None = Field(default=None, ge=0)
@@ -79,8 +83,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_budget_prices(self) -> "Settings":
-        if self.monthly_ai_budget is not None and (
-            self.ai_input_price_per_mtok is None or self.ai_output_price_per_mtok is None
+        # OpenRouter reports the real cost of every call, so it needs no configured prices.
+        if (
+            self.monthly_ai_budget is not None
+            and self.ai_provider != "openrouter"
+            and (self.ai_input_price_per_mtok is None or self.ai_output_price_per_mtok is None)
         ):
             raise ValueError(
                 "MONTHLY_AI_BUDGET requires AI_INPUT_PRICE_PER_MTOK and AI_OUTPUT_PRICE_PER_MTOK"
@@ -98,6 +105,10 @@ class Settings(BaseSettings):
     @property
     def backups_dir(self) -> Path:
         return self.data_dir / "backups"
+
+    @property
+    def cache_dir(self) -> Path:
+        return self.data_dir / "cache"
 
     @property
     def allowed_hosts_list(self) -> list[str]:

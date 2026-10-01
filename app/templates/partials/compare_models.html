@@ -1,0 +1,20 @@
+{# Comparison picker rows: like the Settings picker, with "Add" instead of "Use".
+   Context: results (settings_info.ModelResults). #}
+{% from "partials/model_row.html" import model_row %}
+<div id="compare-models" aria-live="polite">
+  {% if results.rows %}
+  <ul class="model-list">
+    {% for row in results.rows %}
+    {% call model_row(row, "case", rate_hint=True) %}
+      <button type="button" class="model-add" hx-get="/compare/selection" hx-include="#compare-form"
+              hx-vals='{{ {"add": row.model.id}|tojson }}' hx-target="#compare-selection" hx-swap="outerHTML">Add</button>
+    {% endcall %}
+    {% endfor %}
+  </ul>
+  {% if results.total > results.rows|length %}<p class="muted">Showing {{ results.rows|length }} of {{ results.total }} models: refine the search.</p>{% endif %}
+  {% elif results.catalog.available %}
+  <p class="muted">No models match.</p>
+  {% else %}
+  <p class="muted">The model list is unavailable.</p>
+  {% endif %}
+</div>

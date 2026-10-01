@@ -1,5 +1,6 @@
-"""Photo capture with status polling that stops on 286 (AC-7/AC-15), and voice capture with a
-stubbed SpeechRecognition that posts only text (AC-19)."""
+"""Photo capture through the photo tray with status polling that stops on 286 (AC-7/AC-15),
+the tray's no-empty-send and 4xx-message guarantees, and voice capture with a stubbed
+SpeechRecognition that posts only text (AC-19)."""
 
 import json
 import time
@@ -34,8 +35,9 @@ def test_photo_capture_polls_until_done_then_stops(server, page: Page) -> None:
     page.on("request", on_request)
     page.on("response", on_response)
 
-    # Choosing the file submits the form (as after taking the photo on a phone).
+    # Taking the photo puts it in the tray; Send posts it.
     page.set_input_files("#capture-photo-input", str(FIXTURES / "shelf.jpg"))
+    page.locator("#capture-photo-send").tap()
     status = page.locator("#capture-results .capture-status")
     expect(status).to_have_attribute("data-capture-status", "done", timeout=20_000)
     expect(status).to_contain_text("Added 12 items to Garage")
@@ -54,6 +56,42 @@ def test_photo_capture_polls_until_done_then_stops(server, page: Page) -> None:
         expect(page.locator("#location-items")).to_contain_text(name)
     (row,) = server.query("SELECT count(*) AS n FROM items WHERE location_id = ?", garage_id)
     assert row["n"] == 12
+
+
+def test_file_forms_send_nothing_without_a_file(server, page: Page) -> None:
+    # Regression: a visible submit button used to post an empty file input (400). The photo
+    # tray's Send stays disabled until a photo is in the tray; an empty pick (camera
+    # cancelled) adds nothing, and submitting an empty tray is cancelled.
+    _, code = server.create_location("Garage")
+    server.login(page, f"/l/{code}")
+    posts: list[str] = []
+    page.on("request", lambda r: posts.append(r.url) if r.method == "POST" else None)
+    for form in ("#capture-photo", "#capture-reconcile"):
+        expect(page.locator(f"{form} button[type=submit]")).to_have_count(1)
+        expect(page.locator(f"{form}-send")).to_be_disabled()
+    page.set_input_files("#capture-photo-input", [])  # a change event with no file
+    page.set_input_files("#capture-reconcile-input", [])
+    for form in ("#capture-photo", "#capture-reconcile"):
+        expect(page.locator(f"{form}-thumbs .tray-thumb")).to_have_count(0)
+        expect(page.locator(f"{form}-send")).to_be_disabled()
+        page.locator(form).evaluate("form => form.requestSubmit()")
+    page.wait_for_timeout(1_000)
+    assert posts == []
+
+
+def test_refused_upload_shows_its_message_next_to_the_form(server, page: Page) -> None:
+    # A 4xx answer (here: a PDF is not a photo) is shown inside the form that posted, and the
+    # tray keeps its photos so the bad one can be removed.
+    _, code = server.create_location("Garage")
+    server.login(page, f"/l/{code}")
+    page.set_input_files("#capture-reconcile input[multiple]", str(FIXTURES / "receipt.pdf"))
+    page.locator("#capture-reconcile-send").tap()
+    message = page.locator("#capture-reconcile-message")
+    expect(message).to_contain_text("Use a photo; PDFs are for receipts.")
+    expect(message).to_be_in_viewport()
+    expect(page.locator("#capture-reconcile-thumbs .tray-thumb")).to_have_count(1)
+    expect(page.locator("#capture-results .capture-status")).to_have_count(0)
+    assert server.query("SELECT id FROM captures") == []
 
 
 TRANSCRIPT = "two cartons of milk and the drill is in the garage"

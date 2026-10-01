@@ -17,6 +17,7 @@ ALLOWED = (
     "auth/passwords.py",
     "auth/sessions.py",
     "capture/*.py",  # capture service, worker, apply, budget ledger (not routes.py)
+    "compare/*.py",  # comparison cases, runs and results (not routes.py)
 )
 EXECUTE_METHODS = {"execute", "executemany", "executescript"}
 WRITE_SQL = re.compile(
@@ -87,6 +88,8 @@ def test_allowed_set():
     assert is_allowed(Path("capture/budget.py"))
     assert not is_allowed(Path("inventory/routes.py"))
     assert not is_allowed(Path("capture/routes.py"))
+    assert is_allowed(Path("compare/runs.py"))
+    assert not is_allowed(Path("compare/routes.py"))
     assert not is_allowed(Path("settings_routes.py"))
     assert not is_allowed(Path("auth/routes.py"))
     assert not is_allowed(Path("api/routes.py"))

@@ -33,4 +33,28 @@
   <label>Notes <textarea name="notes" rows="3">{{ values.notes or '' }}</textarea></label>
   <button type="submit">Save</button>
 </form>
+{% if sightings %}
+{% from "partials/gallery.html" import strip %}
+<section class="panel sightings" id="item-{{ item_id }}-seen">
+  <h2>Where it was seen</h2>
+  <ul class="sighting-list">
+    {% set frames = sighting_frames(sightings) %}
+    {% for sighting in sightings %}
+    {% set frame = frames[loop.index0] %}
+    <li class="sighting" id="item-{{ item_id }}-seen-{{ sighting.photo_id }}">
+      {% set caption %}{{ "Seen" if sighting.marked else "Photo" }}{% if sighting.location_name %} in {{ sighting.location_name }}{% endif %}, {{ sighting.seen_at[:10] }}{% if not sighting.marked %} (not marked){% endif %}{% endset %}
+      {% if sighting.root_capture_id %}
+      <a class="sighting-link" href="/captures/{{ sighting.root_capture_id }}?item={{ item_id }}">
+        {{ strip("item-" ~ item_id ~ "-photo-" ~ sighting.photo_id, [frame], caption, focusable=False) }}
+        <span class="sighting-caption">{{ caption }}</span>
+      </a>
+      {% else %}
+      {{ strip("item-" ~ item_id ~ "-photo-" ~ sighting.photo_id, [frame], caption, focusable=False) }}
+      <span class="sighting-caption">{{ caption }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,46 @@
+{# The ranked summary table of a comparison report; re-rendered after "Use this model".
+   Context: report. #}
+<div id="compare-summary">
+  <div class="table-scroll">
+    <table class="compare-table">
+      <thead>
+        <tr><th>#</th><th>Model</th><th>F1</th><th>Found</th><th>Missed</th><th>Extra</th>
+          <th>Qty acc.</th>{% if report.has_receipts %}<th>Price acc.</th>{% endif %}<th>Cost / case</th><th>Total cost</th><th>Median time</th>
+          <th>Failures</th><th>n</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for s in report.summaries %}
+        <tr data-model-id="{{ s.model }}" data-rank="{{ s.rank }}">
+          <td>{{ s.rank }}</td>
+          <td class="model-cell"><span class="model-name">{{ report.names[s.model] }}</span><br><code class="muted">{{ s.model }}</code>
+            {% if s.best_value %}<br><span class="badge best-value">best value{% if report.indicative %} (indicative){% endif %}</span>{% endif %}
+            {% if s.model in report.original_models %}<br><span class="badge original-model" title="This model made the original capture of at least one case">original captures</span>{% endif %}</td>
+          <td>{{ "%.2f"|format(s.mean_f1) }}</td>
+          <td>{{ s.found }}</td>
+          <td>{{ s.missed }}</td>
+          <td>{{ s.extra }}</td>
+          <td>{% if s.quantity_accuracy is none %}–{% else %}{{ "%.0f"|format(s.quantity_accuracy * 100) }}%{% endif %}</td>
+          {% if report.has_receipts %}<td class="price-accuracy">{% if s.price_accuracy is none %}–{% else %}{{ "%.0f"|format(s.price_accuracy * 100) }}%{% endif %}</td>{% endif %}
+          <td>{% if s.cost_per_case_micros is none %}–{% else %}{{ (s.cost_per_case_micros / 1000000)|usd }}{% endif %}</td>
+          <td>{{ (s.total_cost_micros / 1000000)|usd }}</td>
+          <td>{% if s.median_duration_ms is none %}–{% else %}{{ "%.1f"|format(s.median_duration_ms / 1000) }} s{% endif %}</td>
+          <td>{{ s.failures }}</td>
+          <td>{{ s.n }}</td>
+          <td>
+            {% if report.selectable and s.model in report.usable %}
+              {% if s.model == report.active_model %}<span class="active-model">Active</span>
+              {% else %}
+              <form hx-post="/compare/runs/{{ report.run.id }}/use" hx-target="#compare-summary" hx-swap="outerHTML">
+                <input type="hidden" name="model" value="{{ s.model }}">
+                <button type="submit" class="use-model">Use this model</button>
+              </form>
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if report.indicative %}<p class="muted" id="compare-indicative">Fewer than 10 cases: the ranking and “best value” are indicative only.</p>{% endif %}
+</div>

@@ -1,0 +1,27 @@
+{
+  "id": "gen-1790700000-AbCdEfGhIjKlMnOpQrSt",
+  "provider": "Google",
+  "model": "google/gemini-3.1-flash-lite",
+  "object": "chat.completion",
+  "created": 1790700000,
+  "choices": [
+    {
+      "logprobs": null,
+      "finish_reason": "length",
+      "native_finish_reason": "MAX_TOKENS",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"items\": [{\"name\": \"Pasta\", \"quan",
+        "refusal": null,
+        "reasoning": null
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 700,
+    "completion_tokens": 4096,
+    "total_tokens": 4796,
+    "cost": 0.006319
+  }
+}

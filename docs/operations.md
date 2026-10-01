@@ -7,7 +7,7 @@ app stores lives in one directory, `/data` in the container (`./data` next to
 | Path | Contents |
 |---|---|
 | `inventory.db` (+ `-wal`, `-shm`) | SQLite database in WAL mode |
-| `photos/YYYY/MM/` | Original uploads, plus `.display.jpg` derivatives for HEIC |
+| `photos/YYYY/MM/` | Original uploads, plus an upright `.display.jpg` copy of each photo (long edge 2000 px) |
 | `backups/latest.db` | The latest consistent snapshot of the database |
 
 ## Install
@@ -56,6 +56,12 @@ The app speaks plain HTTP on port 8000 and expects a reverse proxy to terminate 
 - **Proxy in Docker** (Caddy or Traefik containers): remove `ports:` and use
   `expose: ["8000"]` on a network shared with the proxy. Then only containers on that
   network can reach the app.
+- **Direct LAN access, no proxy** (a trusted home network only): set `BIND_ADDRESS=0.0.0.0`
+  in `.env`. Also set `PUBLIC_BASE_URL` to the address phones will use (for example
+  `http://192.168.1.20:8000`) so QR/NFC tags point there. Set `FORWARDED_ALLOW_IPS=127.0.0.1`
+  so no LAN client can spoof `X-Forwarded-For` to dodge the login throttle. Traffic,
+  including the password, is unencrypted plain HTTP. The browser microphone (voice input)
+  needs HTTPS, so it stays hidden; keyboard dictation still works.
 
 ### Trusted proxies: `FORWARDED_ALLOW_IPS`
 
@@ -205,18 +211,251 @@ return 403.
 - **Prices and budget are in USD.** `AI_INPUT_PRICE_PER_MTOK` and
   `AI_OUTPUT_PRICE_PER_MTOK` are USD per million tokens (copy them from the provider's
   price list for your model). `MONTHLY_AI_BUDGET` is USD per calendar month in `TZ` and
-  requires both prices. Once the month's total reaches it, capture buttons are disabled
+  requires both prices (except with OpenRouter, see below). Once the month's total reaches it, capture buttons are disabled
   and the capture endpoints return 409 until next month. Manual entry keeps working.
   Overshoot is at most the one call already in flight.
-- **Timeouts are not counted.** A call that hits `AI_TIMEOUT_SECONDS` (60) reports no
-  usage, so it is recorded with 0 tokens, although the provider may still bill for it.
-  Reported usage and the budget check can therefore undercount. Settings says so as well.
+- **Timeouts.** A call that hits its timeout (a limit on the whole call:
+  `AI_TIMEOUT_SECONDS`, default 60, plus 10 seconds for every photo after the first, so a
+  6-photo capture gets 110 s and a 12-photo extension 170 s) reports no usage. With Anthropic it is recorded with 0 tokens, although it may still be
+  billed, so reported usage and the budget check can undercount. With OpenRouter, a timed-out
+  or dropped call (after the request was sent) is charged a conservative estimate: the
+  typical input tokens for that many photos plus the full output cap (16,384 tokens for photo,
+  reconcile and "another angle" captures, 4,096 for receipts and text) at the model's catalog
+  price. Settings says so as well.
 - **Stopping during a call.** `stop_grace_period: 15s` lets uvicorn finish HTTP requests,
   but it is shorter than the 60s provider timeout. `docker compose stop` can therefore
   interrupt an in-flight AI call. The capture stays in the queue, is retried on the next
   start (its upload is on disk), and at most that one call's usage goes unrecorded.
 - Failed captures keep their input. **Retry** on the capture resets it. A capture that
-  fails 3 attempts in a row stops.
+  fails 3 attempts in a row stops. A failed "another angle" capture's photos stop counting
+  toward its group, so Retry checks the group again: if the group has filled up since ("This
+  capture is full now — add the photos as a new angle") or already holds the same photos
+  ("Those photos are already in this capture"), Retry is refused with that message (409,
+  shown next to the button, also in the review queue) and the capture stays failed. As a last
+  safety net the worker fails any capture whose call would send more than 12 photos.
+
+### Several photos per capture, and "add another angle"
+
+- **Several photos.** A photo or reconcile capture takes **1 to 6 photos** in one
+  submission (the `photos` form field; the older single `photo` field still works). They are
+  stored before any AI call and sent to the model together, in the order taken, as views of
+  the same place: the model lists each object once, however many photos show it. Receipts
+  stay one photo or PDF. PDFs are refused for photo and reconcile captures ("Use a photo;
+  PDFs are for receipts"), and so is the same photo twice ("That photo is already in this
+  capture").
+- **Image formats.** Only what phones and browsers produce is decoded: JPEG, PNG, WebP, GIF
+  and HEIC/HEIF (plus PDF for receipts). Anything else (TIFF, BMP, …), even renamed `.jpg`, is
+  stored but never decoded: the capture fails with "not a readable image" (keep the original
+  and send a JPEG instead). Large photos are decoded at a reduced scale for the display copy,
+  which keeps the worker's memory low.
+- **Add another angle.** A finished photo capture (or one of its extensions) can get more
+  photos later: `POST /captures/<id>/extend` creates an *extension* capture of the group's
+  first capture, at its location, queued like any capture and behind the same budget and
+  AI-disabled gates. The model gets every photo of the group (old ones first) and the items
+  already recorded there; it reports which ones it sees again. Items already there are
+  **never changed**: they only gain boxes on the photos and a "last seen" time, and a
+  higher count than recorded becomes a quantity proposal in the review queue (a lower count
+  is ignored — an angle can hide things). Group items that were moved or used up since are
+  sent as "not here any more" and are never added again. An object the model reports as new
+  but whose name equals an item still at the location is treated as that item and flagged
+  for review; one whose name equals only a moved or used-up item is added as a new item,
+  flagged for review (a replacement bought after the old one was used up, say). Missing items
+  are not proposed: that is what reconcile is for. "Added X new, Y already known" counts as
+  known every item still at the location that the model matched, boxed or not; matches to
+  moved or used-up items are not counted.
+- **Limits.** At most 6 photos per submission and **12 per capture group** (photos of queued,
+  processing and finished captures count; failed ones do not). Each file is limited to
+  `MAX_UPLOAD_MB`; a request larger than 6 × `MAX_UPLOAD_MB` + 1 MB is refused (413) before it
+  is read, and so is an upload without a Content-Length (411; browsers always send one for a
+  form upload, so a reverse proxy in front must pass it on rather than re-chunk the body —
+  Caddy, Traefik and nginx do by default). A body that is not a multipart file upload is
+  refused (415) without being parsed. Refused uploads are logged with their file count and
+  sizes.
+- **Boxes.** The model also marks where each item is on each photo (numbered boxes). They are
+  best effort: an invalid box is dropped without failing the capture, and an item without a
+  box is still saved ("not marked"). Every photo gets an upright display copy (EXIF rotation
+  applied, long edge 2000 px) that the boxes are drawn on; the original is kept untouched.
+  Receipts and text captures have no boxes. Boxes are replaced **per photo**: when a later
+  call (another angle, a reconcile) marks an item on a photo, its older boxes on *that*
+  photo are replaced; on photos where the model did not mark it this time, its older boxes
+  stay (leaving a box out does not show the item is gone from that photo).
+- **Cost.** A capture with more photos costs more (roughly per photo). Settings shows the
+  estimate "per 1-photo capture". Ledger rows from before photo counts were recorded count as
+  no photo for text captures (left out of the per-photo average) and one photo otherwise (PDF
+  receipts included: their page count was not recorded).
+- **Out of scope** for now: deleting individual photos, and backfilling display copies or
+  boxes for photos taken before this feature (modern browsers apply the EXIF rotation to
+  those originals themselves).
+
+#### Using it on a phone
+
+- **Taking several photos.** The photo and reconcile forms have a photo tray. **Take photo**
+  opens the camera for one photo; tap it again for the next angle (iPhones take one photo per
+  camera trip). **Choose photos** picks several from the library at once. Each photo shows
+  as a thumbnail with a **×** to remove it, and the count says how many more fit (6 per
+  send). Nothing is uploaded until you tap **Send (N photos)**, which stays greyed out while
+  the tray is empty. If the server refuses the upload (too large, a PDF, the same photo twice,
+  budget reached), the message appears right under that form and the photos stay in the tray,
+  so you can remove the bad one and send again. Capture needs JavaScript (it always has).
+- **Android caveat.** Some Android phones close the browser tab while the camera app is open
+  (low memory); the tray is then empty when you come back. Use **Choose photos** to add the
+  photos you just took from the gallery instead.
+- **Reading the boxes.** When a photo capture finishes, its photos appear with a numbered box
+  around each item the model found, and the item list below uses the same numbers. Swipe
+  sideways for the other photos. Tap an item in the list to highlight its boxes (thick dashed
+  yellow outline; the other boxes fade) and scroll to the first one; tap it again to clear.
+  Tap a box to highlight its item. Items listed as "not marked" were found but not boxed;
+  items moved or used up since are listed with that state. The full view is the capture's
+  page, `/captures/<id>` (**View** on the result, or "N photos · View" on **Recent
+  captures**).
+- **Add another angle.** On a finished photo capture's page (not a reconcile's), **Add another
+  angle** has the same tray (it says how many photos still fit: 6 per send, or "this capture
+  has room for N" when fewer than 6 of the 12 per capture are left; it updates as angles are
+  added). When it is done the result
+  reads "Added X new, Y already known" and the photos above, the older ones included, show the
+  new boxes.
+- **Elsewhere.** An item's edit page shows **Where it was seen**: the photos with that item's
+  box ("Seen in Garage, 2026-09-30"); tap one to open the capture with the item highlighted.
+  The review queue shows a crop of the box for items to check (tap it for the whole photo):
+  a square around the box, in the photo's own proportions (nothing is stretched; a box near
+  the edge is shifted inside the photo rather than cut). Photos without a recorded display
+  size keep the plain padded crop. Items from a PDF receipt show no photo (there is no image
+  to show), and a comparison report shows no boxes strip for PDF receipt cases.
+  A comparison report shows each case's photos with one model's boxes at a time (the buttons
+  above the photos switch models; the numbers match that model's item lines, missed items
+  have none). Boxes are shown, not scored.
+
+### Using OpenRouter
+
+[OpenRouter](https://openrouter.ai) gives one key for hundreds of models from many vendors,
+so you can pick a model by price and quality instead of a fixed Claude subscription. The
+direct Anthropic provider stays available.
+
+- **Key.** Create a key at <https://openrouter.ai/settings/keys> and add credits. In `.env`
+  set `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY=<key>` and a default `AI_MODEL` in
+  OpenRouter's `vendor/model` form, for example `google/gemini-3.1-flash-lite` (reads
+  images, supports tool calls, inexpensive). Restart the container. Without the key, or with
+  an `AI_MODEL` that is not an OpenRouter id (such as the Anthropic default
+  `claude-sonnet-5-5`), AI capture is disabled with a message on Settings and manual entry
+  keeps working. The key only ever leaves the server in the `Authorization` header to
+  openrouter.ai; it is never shown, logged or sent to the browser. Requests carry the
+  `X-Title: Household Inventory` header and no `HTTP-Referer`, so your hostname is not
+  shared.
+- **Choosing a model.** Settings → **AI model** shows the active model with its prices, and
+  a search over OpenRouter's model list (fetched by the server, cached for an hour, and kept
+  in `DATA_DIR/cache/openrouter_models.json` so a restart or an outage still has a list).
+  By default only models that read images are listed; tick the box to see all. Each row
+  shows the price per million input/output tokens, a **rough** cost per 1-photo capture
+  (from the per-photo average tokens of your last 20 successful AI calls, or 1,500 in /
+  400 out before the first one; more photos cost roughly proportionally more),
+  and badges: **tools** (forced tool call, the most reliable), **JSON** (strict JSON
+  output), **best effort** (the model is only asked for JSON in the prompt). **Use** makes
+  it active for the next capture, without a restart. **Reset to .env default** goes back
+  to `AI_MODEL`. A model that cannot read images may be chosen, with a warning: photo,
+  receipt and reconcile captures then fail and text captures still work. Models whose
+  price OpenRouter does not publish (such as `openrouter/auto`) are not offered.
+- **When a model disappears** from OpenRouter, Settings warns, and captures fail with
+  "Model … is no longer available on OpenRouter — pick another in Settings".
+- **Real costs.** OpenRouter reports what each call actually cost (in credits, 1 credit =
+  1 USD); the ledger records that amount, so Settings totals and the budget use real spend.
+  `AI_INPUT_PRICE_PER_MTOK` / `AI_OUTPUT_PRICE_PER_MTOK` are not needed. If a response ever
+  lacks the cost, the model's catalog prices are used instead.
+- **Budget.** `MONTHLY_AI_BUDGET` works as above and needs no price variables with
+  OpenRouter. "Insufficient credits" (HTTP 402) fails the capture with
+  "OpenRouter: insufficient credits": top up your OpenRouter balance and press Retry.
+  Rate limits (429) and provider outages (5xx) are retried automatically: a capture waits
+  5 seconds (a rate limit without `Retry-After`: 30 s, then 60 s), or as long as the
+  provider's `Retry-After` asks (at most 5 minutes), up to 3 attempts in all.
+- **Models without forced tool calls.** Some models list tool calls (or structured output)
+  in the catalog although no provider behind them accepts them right now; OpenRouter then
+  answers "No endpoints found that support the provided 'tool_choice'". The app retries at
+  once, in the same call and without extra cost, with the next way of asking for the answer
+  (tool call → JSON schema → JSON described in the prompt; the generic "No endpoints found
+  that can handle the requested parameters." is treated the same), and remembers what worked
+  for that model for an hour (the log shows an INFO line), then tries its best mode again.
+  This fallback is silent: such a model may run in a weaker output mode (JSON described in
+  the prompt is "best effort") than its badge in the picker says, which can lower its
+  results in a comparison. When none works, the call fails with "No provider for <model>
+  supports structured output right now" (OpenRouter's own message is kept as the details).
+- **Timeouts** (the whole call is limited to `AI_TIMEOUT_SECONDS` + 10 s per extra photo) and dropped connections
+  are charged a conservative estimate, as described above, because OpenRouter may still bill
+  them. A capture that times out is retried like before; a comparison call is not.
+- **The model list** is refreshed at most once an hour; the page or capture that triggers a
+  refresh can wait up to 10 seconds for it.
+
+#### Comparing models on your own captures
+
+Settings → **Model comparison** (or `/compare`) re-runs captures you already made on 2–5
+OpenRouter models and ranks them against the items you say each capture really contains.
+It needs `OPENROUTER_API_KEY`; `AI_PROVIDER` can stay `anthropic`, so you can try OpenRouter
+models before switching.
+
+- **Building good cases.** On **Captures**, a finished photo, receipt or text capture has
+  **Use for model comparison**. The form is pre-filled with the items that capture created
+  (receipts also with prices); open the original photo or read the text, then fix names and
+  counts, remove wrong rows and add what was missed. If the items were edited or used up
+  since, the form says so. Pick captures that are typical for you (a busy shelf, a long
+  receipt, a spoken list) and a few hard ones; 10 or more cases make the ranking
+  trustworthy, below 10 the report marks "best value" as indicative. Reconcile captures
+  cannot be cases. A case made from a capture with extra angles belongs to the group's first
+  capture and uses **all the group's photos** at the time the case is made (all sent in one
+  call, with the plain shelf prompt); its pre-filled items are the whole group's. A case whose
+  photo/PDF (any of its photos) was deleted is flagged "input missing" and skipped. Deleting
+  a case hides it from new comparisons; old reports keep it. Each model's boxes are stored
+  with its answer (shown, not scored).
+- **Cost.** Every case is one call per model, charged to your OpenRouter credits and
+  counted in the monthly budget (Settings shows the comparison part separately). The page
+  shows a **rough** estimate (per case, the estimate for its number of photos; × models) and refuses to
+  start when the month's spend plus **twice** that estimate would exceed
+  `MONTHLY_AI_BUDGET`. The budget is also re-checked before every call: when it runs out,
+  the comparison stops with "monthly budget reached" and the remaining calls fail.
+- **While it runs.** One comparison runs at a time and can be cancelled. Captures always go
+  first: the worker makes one comparison call only when no capture is waiting, so a new
+  capture waits for at most one comparison call, which can take up to
+  `AI_TIMEOUT_SECONDS`. A rate limit (429: the model's provider is busy, common with free or
+  new models) is retried up to 4 attempts in all, waiting 30 s, 60 s, then 120 s (or longer
+  when the provider's `Retry-After` asks, counted up to 10 minutes); the other calls go on
+  meanwhile. Other outages are retried once, 30 seconds later (or after `Retry-After`); a
+  timeout is not retried (it may have been billed); any other error fails that model's call
+  for that case only, and the other models carry on.
+- **Rate limits: what to expect.** Free variants (model ids ending in `:free`, marked in the
+  picker) and cheap "flash" models are often rate-limited by their providers. Each throttled
+  result can add up to about 3.5 minutes (30 s + 60 s + 120 s of pauses) before it succeeds
+  or fails, and a provider's `Retry-After` can stretch a single pause to 10 minutes. Other
+  models' calls go on meanwhile, and **Cancel** stops the run at any time (results so far
+  stay in the report).
+- **What the page shows.** Tapping **Start comparison** shows the run's status right below
+  the button (the page scrolls to it) and locks the form ("A comparison is running…") until
+  the run ends. The status updates every 2 seconds: overall calls done, the time elapsed, and
+  one row per model with its calls done, how many succeeded or failed, how many are
+  **waiting to retry** and its latest error in plain words, for example "Rate-limited by the
+  model's provider — busy right now; retried 3 times." "Waiting to retry" means a call hit a
+  rate limit or outage and is scheduled again; the row says when ("Trying again in about
+  25 s", recomputed on every update). Tap **Details** under a row for OpenRouter's own
+  message (the report shows it under **Details** too). **Cancel** stops the run. When it ends, the status shows the best
+  model (F1 and cost per case) and **See the report**, the run appears under **Past
+  comparisons** and the form unlocks, without reloading the page. Each case's item list is fixed when the
+  comparison starts: editing a case meanwhile does not change how the running comparison
+  scores the models, and its report keeps showing the list it used.
+- **Reading the report.** Predicted items are matched to your list one-to-one by name
+  (case, punctuation and simple plurals ignored; a name whose words all appear in the other
+  also matches, so "Coca-Cola Zero" matches "Coca-Cola Zero 330ml can"; names of 4 letters
+  or fewer must match exactly or be a whole word of the other name, so "Eggs" matches
+  "Free-range eggs" and "Tape" matches "Duct tape", but "milk" never matches "silk"). **F1** combines found
+  (recall) and extra (precision) items, from 0 to 1; a failed call counts as 0 and is also
+  listed under **Failures**. **Qty acc.** is the share of found items with the right count;
+  when the run has receipt cases, **Price acc.** is the share of found items priced within
+  1 cent. The table also shows cost per case (the spend on the scored cases divided by
+  their number), total cost (everything spent, including calls of a cancelled run), median
+  time and **n** (cases), and marks the model that made the cases' original captures.
+  Models are ranked by mean F1, ties by lower cost per case; **best value** is the cheapest
+  model per case within 0.05 F1 of the best. Open a case to see your list next to each model's items, marked ✓ found,
+  + extra and − missed, and which model made the original capture. **Use this model** makes
+  that model active for the next capture (with `AI_PROVIDER=openrouter`).
+- **Restarts.** A running comparison resumes after a restart. A crash between a call
+  returning and its result being saved repeats that call (and bills it again); a call that
+  keeps crashing the app is given up after 6 attempts. Timed-out calls are charged the
+  estimate described above.
 
 ## Backups and restore
 
@@ -350,3 +589,23 @@ Procedure:
 The other manual checks from the plan are a real iPhone opening the rear camera over HTTPS
 through the proxy (AC-32) and a printed QR scanned by a phone (AC-11). Record them the same
 way when done.
+
+### Multi-photo tray on real phones
+
+**Status: manual check — not yet recorded.** The e2e tests drive the tray in Chromium and
+WebKit with injected files; a real camera cannot be automated. On an **iPhone (Safari)** and
+an **Android phone (Chrome)**, over the real proxy URL:
+
+1. On a location page, tap **Take photo** twice (two camera trips) and **Choose photos** once
+   with two library photos: the tray shows 4 thumbnails; remove one with ×; **Send (3
+   photos)**.
+2. Cancel the camera once: nothing is sent and the tray is unchanged.
+3. When the capture is done, the numbered boxes sit on the right objects on every photo
+   (portrait and landscape shots), tapping a list row highlights its boxes and tapping a box
+   its row, and the page does not scroll sideways.
+4. On the capture's page, **Add another angle** with one photo: "Added X new, Y already known".
+
+| Phone | Browser | Date | Result |
+|---|---|---|---|
+| iPhone | Safari | not yet recorded | |
+| Android | Chrome | not yet recorded | |

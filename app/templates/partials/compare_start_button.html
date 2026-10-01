@@ -1,0 +1,5 @@
+{# The start form's submit button: locked (disabled, "A comparison is running…") while a run
+   is running; app.js disables or re-enables the pickers (#compare-controls) to match.
+   Context: locked; oob (swap it out of band). #}
+<button type="submit" id="compare-start-button"{% if locked %} disabled data-locked{% endif %}
+        {%- if oob %} hx-swap-oob="true"{% endif %}>{{ "A comparison is running…" if locked else "Start comparison" }}</button>

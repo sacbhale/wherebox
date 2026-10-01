@@ -78,7 +78,7 @@ def test_settings_page_shows_every_field(auth_client: TestClient, auth_settings:
     assert QR_WARNING in html
     assert "2026-09-28T03:00:00.000Z" in html
     assert "3.0 MB" in html
-    assert "Timeouts are not counted" in html
+    assert "OpenRouter timeouts and dropped calls are charged an estimate" in html
     assert "Asia/Kolkata" in html
 
 

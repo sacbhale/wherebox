@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": 400,
+    "message": "vendor/retired-model is not a valid model ID",
+    "metadata": {
+      "error_type": "invalid_request"
+    }
+  }
+}

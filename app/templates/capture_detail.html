@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Capture #{{ group.root_id }} · Inventory{% endblock %}
+{% block content %}
+{% from "partials/group_parts.html" import group_meta, group_section, extend_section %}
+{% set labels = {"photo": "Photo capture", "receipt": "Receipt", "text": "Text capture", "reconcile": "Reconcile"} %}
+{% set rid = group.root_id %}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  {% if root.location_code and not root.location_deleted_at %}<a href="/l/{{ root.location_code }}">Back to {{ root.location_name }}</a>{% endif %}
+  <a href="/captures">Recent captures</a>
+</nav>
+<h1>{{ labels[root.type] }}{% if root.location_name %} · {{ root.location_name }}{% endif %}</h1>
+{{ group_meta(group) }}
+
+{% if root.status != "done" %}
+{# Polls in the group view: when the root finishes, its gallery, meta line and "Add another
+   angle" section are refreshed out of band. #}
+{% with capture = root, position = 0, outcome = [], view = "group" %}{% include "partials/capture_status.html" %}{% endwith %}
+{% endif %}
+
+{{ group_section(group, highlight) }}
+
+{% if root.type == "photo" %}
+{{ extend_section(group, refusal) }}
+{% endif %}
+
+{% if root.status == "done" and root.type in ("photo", "receipt", "text") and compare_available(request.app.state.settings) %}
+<p class="links"><a class="compare-link" id="capture-{{ rid }}-compare" href="/compare/cases/new?capture_id={{ rid }}">Use for model comparison</a></p>
+{% endif %}
+{% endblock %}

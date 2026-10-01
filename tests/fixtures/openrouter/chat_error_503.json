@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": 503,
+    "message": "No available model provider that meets your routing requirements",
+    "metadata": {
+      "error_type": "provider_overloaded"
+    }
+  }
+}

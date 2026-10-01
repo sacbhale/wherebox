@@ -7,7 +7,7 @@
   {% for row in captures %}
   <li>
     <span class="muted">{{ row.created_at[:16] | replace("T", " ") }} UTC{% if row.location_name %} · {{ row.location_name }}{% endif %}{% if row.input_text %} · “{{ row.input_text | truncate(60) }}”{% endif %}</span>
-    {% with capture = row, position = positions.get(row.id, 0), outcome = outcomes.get(row.id, []) %}{% include "partials/capture_status.html" %}{% endwith %}
+    {% with capture = row, position = positions.get(row.id, 0), outcome = outcomes.get(row.id, []), view = "list", extension = extensions.get(row.id) %}{% include "partials/capture_status.html" %}{% endwith %}
   </li>
   {% endfor %}
 </ul>

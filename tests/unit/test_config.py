@@ -84,6 +84,29 @@ def test_budget_requires_prices():
     assert s.monthly_ai_budget == 5
 
 
+def test_openrouter_budget_needs_no_prices():
+    """OpenRouter reports the real cost of each call, so the budget works without prices."""
+    s = Settings(public_base_url="http://x", ai_provider="openrouter", monthly_ai_budget=5)
+    assert s.monthly_ai_budget == 5 and s.ai_input_price_per_mtok is None
+    with pytest.raises(ValidationError, match="MONTHLY_AI_BUDGET requires"):
+        Settings(public_base_url="http://x", ai_provider="fake", monthly_ai_budget=5)
+
+
+def test_openrouter_settings(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret")
+    monkeypatch.setenv("OPENROUTER_CATALOG_FILE", "/tmp/models.json")
+    s = Settings(public_base_url="http://x")
+    assert s.ai_provider == "openrouter"
+    assert s.openrouter_api_key is not None
+    assert s.openrouter_api_key.get_secret_value() == "sk-or-secret"
+    assert "sk-or-secret" not in repr(s)
+    assert str(s.openrouter_catalog_file) == "/tmp/models.json"
+    assert s.cache_dir == s.data_dir / "cache"
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")  # empty in .env counts as unset
+    assert Settings(public_base_url="http://x").openrouter_api_key is None
+
+
 def test_unknown_tz_rejected():
     with pytest.raises(ValidationError, match="unknown TZ"):
         Settings(public_base_url="http://x", tz="Mars/Olympus")

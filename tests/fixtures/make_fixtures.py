@@ -92,6 +92,21 @@ def make_iphone_heic(path: Path) -> None:
     im.save(path, format="HEIF", quality=60, exif=exif.tobytes())
 
 
+def make_rotated_jpg(path: Path) -> None:
+    """A 1600x1200 sensor-orientation JPEG tagged EXIF orientation 6 (rotate 90 CW).
+
+    Upright it reads as 1200x1600 portrait. The red block stored at the top-left (x 0-400,
+    y 0-300) ends up upright at x 900-1200, y 0-400: in 0..1000 box units
+    [ymin, xmin, ymax, xmax] = [0, 750, 250, 1000]. The rest is blue.
+    """
+    im = Image.new("RGB", (1600, 1200), (40, 90, 160))
+    draw = ImageDraw.Draw(im)
+    draw.rectangle((0, 0, 399, 299), fill=(230, 30, 30))
+    exif = Image.Exif()
+    exif[EXIF_ORIENTATION] = 6
+    im.save(path, format="JPEG", quality=90, exif=exif.tobytes())
+
+
 def write_bomb_png(path: Path, width: int, height: int) -> None:
     """A 1-bit, all-black PNG of width x height: huge in pixels, tiny on disk.
 
@@ -124,6 +139,7 @@ def main() -> None:
     make_receipt_pdf(HERE / "receipt.pdf")
     make_iphone_heic(HERE / "iphone.heic")
     make_huge_png(HERE / "huge.png")
+    make_rotated_jpg(HERE / "rotated.jpg")
 
 
 if __name__ == "__main__":

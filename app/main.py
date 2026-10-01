@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from app.ai.registry import get_provider
+from app.ai.registry import make_provider_for
 from app.api.routes import router as api_router
 from app.auth.middleware import auth_middleware
 from app.auth.routes import init_auth
@@ -15,6 +15,7 @@ from app.auth.routes import router as auth_router
 from app.auth.throttle import LoginThrottle
 from app.capture.routes import router as capture_router
 from app.capture.worker import Worker, reset_processing
+from app.compare.routes import router as compare_router
 from app.config import Settings
 from app.db.connection import connect
 from app.db.migrate import migrate
@@ -38,7 +39,12 @@ def healthz(request: Request) -> dict[str, str]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
-    for directory in (settings.data_dir, settings.photos_dir, settings.backups_dir):
+    for directory in (
+        settings.data_dir,
+        settings.photos_dir,
+        settings.backups_dir,
+        settings.cache_dir,
+    ):
         directory.mkdir(parents=True, exist_ok=True)
     with closing(connect(settings.db_path)) as conn:
         migrate(conn)
@@ -46,7 +52,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         reset_processing(conn)  # captures interrupted by the last shutdown are re-queued
     # The single capture worker thread; tests keep WORKER_AUTOSTART false and call run_once.
     if settings.worker_autostart:
-        app.state.worker = Worker(settings, get_provider(settings), clock=lambda: app.state.clock())
+        provider_for = make_provider_for(settings)
+        # Comparisons always call OpenRouter models (the fake shares its script in tests).
+        if settings.ai_provider in ("openrouter", "fake"):
+            compare_provider_for = provider_for
+        else:
+            compare_provider_for = make_provider_for(settings, "openrouter")
+        app.state.worker = Worker(
+            settings,
+            provider_for=provider_for,
+            compare_provider_for=compare_provider_for,
+            clock=lambda: app.state.clock(),
+        )
         app.state.worker.start()
     try:
         yield
@@ -75,4 +92,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inventory_router)
     app.include_router(capture_router)
     app.include_router(review_router)
+    app.include_router(compare_router)
     return app

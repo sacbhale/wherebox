@@ -76,7 +76,11 @@ def test_exhausted_budget_refuses_captures_but_manual_add_works(client, budget_s
         assert "Monthly AI budget reached" in panel.text
         submits = re.findall(r'<button type="submit"[^>]*>', panel.text)
         assert submits and all("disabled" in button for button in submits)
-        assert re.search(r'<input type="file" name="photo"[^>]*disabled', panel.text)
+        assert re.search(
+            r'<input type="file"[^>]*id="capture-photo-input"[^>]*disabled', panel.text
+        )
+        tray_inputs = re.findall(r"<input[^>]*data-tray-input[^>]*>", panel.text)
+        assert tray_inputs and all("disabled" in tag for tag in tray_inputs)
 
     assert client.get(f"/items/new?loc={garage}").status_code == 200
     added = client.post(
@@ -89,7 +93,10 @@ def test_exhausted_budget_refuses_captures_but_manual_add_works(client, budget_s
 def test_below_budget_capture_buttons_are_enabled(client, budget_settings, garage):
     spend(budget_settings, 100_000)  # $0.30
     panel = client.get("/captures/panel", params={"loc": garage}).text
-    assert "budget" not in panel and "disabled" not in panel
+    assert "budget" not in panel
+    # Only the empty trays' Send buttons are disabled (until a photo is added).
+    disabled = re.findall(r"<[^>]*\bdisabled\b[^>]*>", panel)
+    assert disabled and all("data-tray-send" in tag for tag in disabled)
     assert post_photo(client, garage).status_code == 200
 
 

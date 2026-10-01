@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Model comparison · Inventory{% endblock %}
+{% block content %}
+<h1>Model comparison</h1>
+<p class="muted">Re-run your own corrected captures on 2–5 OpenRouter models and see which ones
+  find your items best, what they cost and how long they take.</p>
+{% if not available %}<p class="error" id="compare-unavailable">{{ unavailable }}</p>{% endif %}
+
+<h2 id="cases-heading">Cases</h2>
+<p id="case-count">{{ cases|length }} comparison case{{ "s" if cases|length != 1 }}</p>
+{% if not cases %}
+<div class="notice" id="compare-empty">
+  <p>No comparison cases yet. Open a finished photo, receipt or text capture →
+    <strong>Use for model comparison</strong>, fix its items and save. Every case is re-run on
+    each model you compare.</p>
+  <p><a class="button" href="/captures" id="compare-captures-link">Go to captures</a></p>
+</div>
+{% else %}
+<ul class="case-list" id="case-list">
+  {% for case in cases %}
+  <li class="case-item" data-case-id="{{ case.id }}">
+    <div class="case-main">
+      <div class="case-label">{{ case.label }}</div>
+      <div class="muted">{{ case.expected|length }} item{{ "s" if case.expected|length != 1 }}
+        {%- if case.capture_model %} · captured with <code>{{ case.capture_model }}</code>{% endif %}</div>
+      {% if case.input_missing %}<div class="error case-missing">Input missing: this case is skipped.</div>{% endif %}
+    </div>
+    <a class="button secondary" href="/compare/cases/{{ case.id }}/edit">Edit</a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if available %}
+<h2>Compare</h2>
+<section id="compare-start" aria-label="Start a comparison">
+  {% if usable %}
+  {# Locked while a run is running (app.js keeps it in step with the start button). #}
+  <fieldset id="compare-controls" class="compare-controls"{% if running %} disabled{% endif %}>
+  <form id="compare-picker" class="stack" role="search" hx-get="/compare/models"
+        hx-target="#compare-models" hx-swap="outerHTML">
+    <input type="search" id="compare-query" name="q" placeholder="Search models, e.g. gemini flash"
+           aria-label="Search models" autocomplete="off"
+           hx-get="/compare/models" hx-trigger="input changed delay:250ms, search"
+           hx-include="#compare-picker" hx-target="#compare-models" hx-swap="outerHTML"
+           hx-sync="this:replace">
+    <label class="check"><input type="checkbox" id="compare-all" name="all" value="1"
+      hx-get="/compare/models" hx-trigger="change" hx-include="#compare-picker"
+      hx-target="#compare-models" hx-swap="outerHTML"> Include models that cannot see images</label>
+  </form>
+  {% include "partials/compare_models.html" %}
+
+  {# The run status (or a refused start's message) appears right below the Start button
+     and is scrolled into view: show: names #compare-run, since htmx would otherwise scroll
+     to the last swapped element (the out-of-band Past comparisons list). hx-disabled-elt is
+     an absolute selector: the case picker and Remove buttons inherit it. #}
+  <form id="compare-form" class="stack" hx-post="/compare/runs" hx-target="#compare-run"
+        hx-swap="innerHTML show:#compare-run:bottom" hx-disabled-elt="#compare-start-button" data-show-errors>
+    {% include "partials/compare_selection.html" %}
+    <fieldset class="case-picker" hx-get="/compare/selection" hx-trigger="change"
+              hx-include="#compare-form" hx-target="#compare-selection" hx-swap="outerHTML">
+      <legend>Cases (at most {{ max_cases }})</legend>
+      {% for case in usable %}
+      <label class="check"><input type="checkbox" name="cases" value="{{ case.id }}"
+        {% if case.id in default_case_ids %}checked{% endif %}> {{ case.label }}
+        ({{ case.expected|length }} item{{ "s" if case.expected|length != 1 }})</label>
+      {% endfor %}
+    </fieldset>
+    {% if remaining_usd is not none %}<p class="muted" id="compare-budget">This month's AI budget left: {{ remaining_usd|usd }}. A comparison is refused when twice its estimate would exceed it.</p>{% endif %}
+    {% with locked = running %}{% include "partials/compare_start_button.html" %}{% endwith %}
+  </form>
+  </fieldset>
+  {% elif cases %}
+  <p class="muted">No usable cases: every case's input is missing.</p>
+  {% endif %}
+  <div id="compare-run" class="compare-run">{% if running %}{% include "partials/compare_run.html" %}{% endif %}</div>
+</section>
+{% endif %}
+
+<h2>Past comparisons</h2>
+{% include "partials/compare_recent.html" %}
+{% endblock %}

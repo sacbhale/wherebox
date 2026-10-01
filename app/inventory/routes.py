@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse, Response
 from app import qr
 from app.auth import sessions
 from app.auth.csrf import is_htmx, require_htmx
+from app.capture import boxes
 from app.config import Settings
 from app.db.deps import Conn
 from app.inventory import categories, items, locations, search
@@ -352,6 +353,8 @@ def _item_form(
             "locations": locations.all_with_paths(conn),
             "categories": categories.list_all(conn),
             "kinds": search.KINDS,
+            # "Where it was seen" (spec-multiphoto R15): photos with this item's boxes.
+            "sightings": boxes.sightings(conn, item_id) if item_id is not None else [],
         },
         status_code=status,
     )

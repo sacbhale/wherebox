@@ -1,0 +1,38 @@
+{
+  "id": "gen-1790700000-AbCdEfGhIjKlMnOpQrSt",
+  "provider": "Google",
+  "model": "google/gemini-3.1-flash-lite",
+  "object": "chat.completion",
+  "created": 1790700000,
+  "choices": [
+    {
+      "logprobs": null,
+      "finish_reason": "tool_calls",
+      "native_finish_reason": "TOOL_CALLS",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "refusal": null,
+        "reasoning": null,
+        "tool_calls": [
+          {
+            "id": "tool_0",
+            "index": 0,
+            "type": "function",
+            "function": {
+              "name": "record_items",
+              "arguments": "{\"items\": [{\"name\": \"Milk\", \"quantity\": 0, \"kind\": \"food\", \"confidence\": 1.7}]}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 900,
+    "completion_tokens": 40,
+    "total_tokens": 940,
+    "cost": 0.000285
+  }
+}
