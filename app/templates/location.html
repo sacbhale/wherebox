@@ -61,6 +61,13 @@
     <button type="submit">Add</button>
   </form>
 </details>
+<p class="links">
+  <a href="/locations/bulk?parent={{ location.id }}" id="bulk-add">Add several sub-locations</a>
+  {%- if children %} ·
+  <a href="/labels?ids={{ label_children|join(',') }}" id="print-children">Print labels for sub-locations</a>
+  {%- if children|length > label_children|length %} (first {{ label_children|length }} of {{ children|length }}){% endif %}
+  {%- endif %}
+</p>
 
 <section class="panel" id="tag">
   <h2>Tag</h2>
@@ -72,7 +79,8 @@
   <p class="links">
     <a href="/l/{{ location.short_code }}/qr.png?scale=10">Download PNG</a> ·
     <a href="/l/{{ location.short_code }}/qr.svg" download="location-{{ location.short_code }}.svg">Download SVG</a> ·
-    <a href="/l/{{ location.short_code }}/label" target="_blank">Print label</a>
+    <a href="/l/{{ location.short_code }}/label" target="_blank">Print label</a> ·
+    <a href="/labels?ids={{ location.id }}" id="label-sheet">Add to label sheet</a>
   </p>
   <p class="muted">Code {{ location.short_code }}</p>
 </section>

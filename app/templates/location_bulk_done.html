@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Locations added · Inventory{% endblock %}
+{% block content %}
+<h1>Created {{ created|length }} location{{ "s" if created|length != 1 }}{% if parent %} in {{ parent.name }}{% else %} at the top level{% endif %}</h1>
+{% if created %}
+<ul class="locations" id="bulk-created">
+  {% for row in created %}<li><a href="/l/{{ row.short_code }}">{{ row.name }}</a></li>{% endfor %}
+</ul>
+<p><a class="button" id="bulk-print" href="/labels?ids={{ label_ids }}">Print labels for these</a></p>
+{% endif %}
+{% if skipped %}
+<h2>Skipped</h2>
+<ul class="locations" id="bulk-skipped">
+  {% for row, reason in skipped %}<li><a href="/l/{{ row.short_code }}">{{ row.name }}</a> <span class="muted">{{ reason }}</span></li>{% endfor %}
+</ul>
+{% endif %}
+<p class="links">
+  {% if parent %}<a href="/l/{{ parent.short_code }}">Back to {{ parent.name }}</a> ·
+  <a href="/locations/bulk?parent={{ parent.id }}">Add more</a>
+  {% else %}<a href="/">Home</a> · <a href="/locations/bulk">Add more</a>{% endif %}
+</p>
+{% endblock %}

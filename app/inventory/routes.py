@@ -5,12 +5,13 @@ methods are origin-checked there too. No state changes over GET."""
 import sqlite3
 from datetime import datetime
 from typing import Annotated, Any
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
 
-from app import qr
+from app import label_sheet, qr
 from app.auth import sessions
 from app.auth.csrf import is_htmx, require_htmx
 from app.capture import boxes
@@ -80,16 +81,21 @@ def _editable(request: Request, conn: sqlite3.Connection, code: str) -> sqlite3.
     return row
 
 
+INT_MAX = 2**63 - 1  # SQLite's largest integer
+
+
 def _opt_int(params: Any, key: str) -> int | None:
     value = (params.get(key) or "").strip()
     if not value:
         return None
     try:
         number = int(value)
-    except ValueError as exc:
+    except (ValueError, OverflowError) as exc:
         raise HTTPException(status_code=400, detail=f"{key} must be a whole number") from exc
     if number < 0:
         raise HTTPException(status_code=400, detail=f"{key} must not be negative")
+    if number > INT_MAX:
+        raise HTTPException(status_code=400, detail=f"{key} is too large")
     return number
 
 
@@ -182,13 +188,16 @@ def location_page(request: Request, conn: Conn, code: str, sub: str = "") -> Res
     moved = _apply_pending_move(request, conn, row["id"])
     subtree = sub in ("1", "true", "on")
     location_ids = locations.subtree_ids(conn, row["id"]) if subtree else [row["id"]]
+    children = locations.children(conn, row["id"])
     return templates.TemplateResponse(
         request,
         "location.html",
         {
             "location": row,
             "breadcrumb": locations.ancestors(conn, row["id"]),
-            "children": locations.children(conn, row["id"]),
+            "children": children,
+            # Creation order, so "Shelf 1" ... "Shelf 10" print in order.
+            "label_children": sorted(row["id"] for row in children)[:IDS_MAX],
             "items": items.list_in(conn, location_ids),
             "subtree": subtree,
             "url": permanent_url(_settings(request), row["short_code"]),
@@ -328,6 +337,193 @@ def location_delete(request: Request, conn: Conn, code: str) -> Response:
     locations.delete(conn, row["id"])
     parent = locations.get(conn, row["parent_id"]) if row["parent_id"] else None
     return _redirect(f"/l/{parent['short_code']}" if parent else "/")
+
+
+# ---------------------------------------------------------------- bulk add and label sheets
+
+IDS_MAX = 100
+ID_DIGITS_MAX = 18  # fits SQLite's integer
+NAMES_CHARS_MAX = 20_000
+
+
+def _id_list(params: Any, key: str) -> list[int]:
+    """Comma-separated ids, deduplicated in order; at most IDS_MAX."""
+    parts = [part.strip() for part in (params.get(key) or "").split(",") if part.strip()]
+    if not all(part.isascii() and part.isdigit() and len(part) <= ID_DIGITS_MAX for part in parts):
+        raise HTTPException(status_code=400, detail=f"{key} must be whole numbers, comma-separated")
+    if len(parts) > IDS_MAX:
+        raise HTTPException(status_code=400, detail=f"at most {IDS_MAX} {key}")
+    return list(dict.fromkeys(int(part) for part in parts))
+
+
+def _live_rows(conn: sqlite3.Connection, ids: list[int]) -> list[sqlite3.Row]:
+    """The live locations among ``ids``, in order; unknown and deleted ones are left out."""
+    return [row for row in (locations.get(conn, i) for i in ids) if row is not None]
+
+
+def _bulk_form(
+    request: Request,
+    conn: sqlite3.Connection,
+    parent: sqlite3.Row | None,
+    names: str = "",
+    error: str | None = None,
+    status: int = 200,
+) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "location_bulk.html",
+        {
+            "parent": parent,
+            "path": locations.path(conn, parent["id"]) if parent else "",
+            "names": names,
+            "error": error,
+            "max": locations.BULK_MAX,
+        },
+        status_code=status,
+    )
+
+
+@router.get("/locations/bulk")
+def location_bulk_form(request: Request, conn: Conn) -> Response:
+    parent_id = _opt_int(request.query_params, "parent")
+    parent = locations.get(conn, parent_id) if parent_id is not None else None
+    if parent_id is not None and parent is None:
+        return _message(request, "Not found", "This location does not exist or was deleted.", 404)
+    return _bulk_form(request, conn, parent)
+
+
+@router.post("/locations/bulk")
+def location_bulk_create(request: Request, conn: Conn, form: Form) -> Response:
+    """Add one location per line under ``parent_id``; then show what was created (PRG)."""
+    parent_id = _opt_int(form, "parent_id")
+    parent = locations.get(conn, parent_id) if parent_id is not None else None
+    if parent_id is not None and parent is None:
+        return _message(request, "Could not add locations", "Location not found.", 400)
+    names = form.get("names", "")
+    if len(names) > NAMES_CHARS_MAX:
+        message = f"The list is too long (over {NAMES_CHARS_MAX:,} characters). Nothing was added."
+        return _bulk_form(request, conn, parent, "", message, 400)
+    try:
+        result = locations.create_many(conn, names.splitlines(), parent_id)
+    except locations.LocationError as exc:
+        return _bulk_form(request, conn, parent, names, str(exc), 400)
+    query = {
+        "parent": "" if parent_id is None else str(parent_id),
+        "ids": ",".join(str(i) for i in result.created),
+        "skipped": ",".join(str(i) for _, i in result.skipped),
+    }
+    return _redirect(f"/locations/bulk/done?{urlencode(query)}")
+
+
+@router.get("/locations/bulk/done")
+def location_bulk_done(request: Request, conn: Conn) -> Response:
+    params = request.query_params
+    parent_id = _opt_int(params, "parent")
+    created_ids = _id_list(params, "ids")
+    created = _live_rows(conn, created_ids)
+    skipped = [
+        (row, "listed more than once" if row["id"] in created_ids else "already exists here")
+        for row in _live_rows(conn, _id_list(params, "skipped"))
+    ]
+    return templates.TemplateResponse(
+        request,
+        "location_bulk_done.html",
+        {
+            "parent": locations.get(conn, parent_id) if parent_id is not None else None,
+            "created": created,
+            "skipped": skipped,
+            "label_ids": ",".join(str(row["id"]) for row in created),
+        },
+    )
+
+
+def _start(params: Any, key: str, high: int) -> int:
+    value = _opt_int(params, key)
+    if value is None:
+        return 1
+    if not 1 <= value <= high:
+        raise HTTPException(status_code=400, detail=f"{key} must be 1 to {high}")
+    return value
+
+
+def _offset(params: Any, key: str) -> float:
+    raw = (params.get(key) or "").strip()
+    try:
+        value = float(raw or 0)
+    except ValueError:
+        value = float("nan")
+    if not label_sheet.valid_offset(value):
+        raise HTTPException(status_code=400, detail=f"{key} must be -5 to 5 in steps of 0.25")
+    return value + 0.0  # no "-0"
+
+
+def _offset_words(dx: float, dy: float) -> str:
+    parts = [
+        f"{abs(value):g} mm {words[value < 0]}"
+        for value, words in ((dx, ("right", "left")), (dy, ("down", "up")))
+        if value
+    ]
+    return ", ".join(parts) or "none"
+
+
+@router.get("/labels")
+def label_sheet_page(request: Request, conn: Conn) -> Response:
+    """Printable 21-up A4 sticker sheets for ``ids``, starting at (start_row, start_col) of the
+    first sheet and shifted by the printer calibration (dx, dy mm). ``test=1`` prints only the
+    label outlines, to check alignment."""
+    params = request.query_params
+    ids = _id_list(params, "ids")
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    start_row = _start(params, "start_row", label_sheet.ROWS)
+    start_col = _start(params, "start_col", label_sheet.COLS)
+    dx, dy = _offset(params, "dx"), _offset(params, "dy")
+    test = _flag(params, "test")
+    rows = _live_rows(conn, ids)
+    if not rows:
+        return _message(request, "Nothing to print", "None of these locations exist any more.", 404)
+    labels: list[dict | None] = []
+    if test:
+        cells = label_sheet.layout(label_sheet.PER_SHEET, 1, 1, dx, dy)
+        labels = [None] * len(cells)
+    else:
+        for row in rows:
+            url = permanent_url(_settings(request), row["short_code"])
+            parents = locations.ancestors(conn, row["id"])[:-1]
+            labels.append(
+                {
+                    "name": row["name"],
+                    "code": row["short_code"],
+                    "url": url,
+                    "url_text": url.split("://", 1)[-1],
+                    "path": search.PATH_SEP.join(parent["name"] for parent in parents),
+                    "qr_svg": qr.svg_inline(url, scale=1, omitsize=True),
+                }
+            )
+        cells = label_sheet.layout(len(labels), start_row, start_col, dx, dy)
+    sheets: list[list[tuple[label_sheet.Cell, dict | None]]] = []
+    for cell, label in zip(cells, labels, strict=True):
+        if cell.sheet == len(sheets):
+            sheets.append([])
+        sheets[-1].append((cell, label))
+    return templates.TemplateResponse(
+        request,
+        "labels.html",
+        {
+            "sheets": sheets,
+            "test": test,
+            "count": len(rows),
+            "start_row": start_row,
+            "start_col": start_col,
+            "first": (start_row - 1) * label_sheet.COLS + start_col - 1,
+            "rows": label_sheet.ROWS,
+            "cols": label_sheet.COLS,
+            "dx": f"{dx:g}",
+            "dy": f"{dy:g}",
+            "offset_words": _offset_words(dx, dy),
+            "ids": ",".join(str(row["id"]) for row in rows),
+        },
+    )
 
 
 # ---------------------------------------------------------------- item form

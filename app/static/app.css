@@ -217,6 +217,62 @@ ul.move-targets { list-style: none; padding: 0; margin: 0; display: flex; flex-d
   .label { border: 0; }
 }
 
+/* Bulk add: the numbered-series helper */
+.series {
+  min-width: 0; margin: 0; border: 1px solid var(--border); border-radius: 0.5rem;
+  display: flex; flex-direction: column; gap: 0.5rem;
+}
+.series .row label { flex: 1; min-width: 0; }
+.series p { margin: 0; }
+
+/* Label sheets: 21-up A4 stickers (3 x 7, 63.5 x 38.1 mm); positions come from
+   app/label_sheet.py. On screen the sheets scroll inside .label-sheets, never the page. */
+.sheet-map {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  max-width: 15rem; margin: 0.75rem 0; padding: 6px; background: #fff;
+  border: 1px solid var(--border); border-radius: 0.25rem;
+}
+.sheet-cell {
+  min-height: 44px; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed #9ca3af; border-radius: 0.25rem; text-decoration: none;
+  color: #111827; font-weight: 600;
+}
+.sheet-cell.used { background: #e5e7eb; border-style: solid; }
+.sheet-cell.print { background: #dbeafe; border: 1px solid #2563eb; }
+.sheet-cell[aria-current] { outline: 3px solid #2563eb; outline-offset: 1px; }
+.sheet-form .row label { flex: 1; }
+.label-sheets { overflow-x: auto; margin-top: 1rem; }
+.label-sheet {
+  position: relative; width: 210mm; height: 297mm; overflow: hidden;
+  background: #fff; color: #000; outline: 1px solid var(--border); margin-bottom: 1rem;
+}
+.sheet-label {
+  position: absolute; width: 63.5mm; height: 38.1mm; padding: 2mm; overflow: hidden;
+  display: flex; align-items: center; gap: 2mm; outline: 1px dashed #bbb;
+}
+.sheet-label svg { flex: none; width: 30mm; height: 30mm; }
+.sheet-text {
+  flex: 1; min-width: 0; max-height: 100%; overflow: hidden;
+  display: flex; flex-direction: column; gap: 0.6mm; line-height: 1.15;
+}
+.sheet-text p {
+  margin: 0; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.sheet-name { font-size: 9pt; font-weight: 700; }
+.sheet-path { font-size: 6.5pt; }
+.sheet-code { font: 700 8pt/1.15 ui-monospace, monospace; }
+.sheet-url { font: 6pt/1.15 ui-monospace, monospace; word-break: break-all; }
+@media print {
+  .labels-page .page { max-width: none; margin: 0; padding: 0; }
+  .label-sheets { overflow: visible; margin: 0; }
+  /* 296mm, not 297: rounding at exactly A4 can spill an empty page. Labels end by 286.85mm. */
+  .label-sheet { height: 296mm; outline: 0; margin: 0; break-after: page; }
+  .label-sheet:last-child { break-after: auto; }
+  .label-sheet:not(.test) .sheet-label { outline: 0; }
+  .label-sheet.test .sheet-label { outline: 0.3mm solid #000; outline-offset: -0.3mm; }
+}
+
 /* Elements toggled with the hidden attribute (e.g. the mic button) stay hidden despite display rules. */
 [hidden] { display: none !important; }
 

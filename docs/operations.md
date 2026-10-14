@@ -560,6 +560,29 @@ directory.
 copies its data directory, starts a second container on the copy, and checks that the
 exports are identical and that `backups/latest.db` holds the same data.
 
+## Adding many locations and printing label sheets
+
+**Add several locations** (home page) or **Add several sub-locations** (a location page)
+opens a form that takes one name per line, up to 50 at a time. The numbered-series helper
+fills the list for you: name `Shelf`, from `1` to `10` gives `Shelf 1` … `Shelf 10`; type
+`01` to get leading zeros. Edit the list before saving. Names that already exist in that
+place, or appear twice, are skipped and listed on the result page. If any name is over 200
+characters, nothing is added.
+
+**Print labels for these** (result page), **Print labels for sub-locations** and **Add to
+label sheet** (location page) open a sheet for A4 sticker paper with 21 labels (3 × 7, each
+63.5 × 38.1 mm, the "L7160"/"5029" layout). Each label has the QR code, the name, the parent
+path and the URL. Up to 100 labels fit in one print; they continue onto more sheets.
+
+- Print from a computer if you can. In the print dialog choose paper size **A4**, scale
+  **100% / Actual size** (not "Fit to page"), margins None or Default. On a phone: Share →
+  Print → Save as PDF (or save the page as PDF), then print the PDF at 100%.
+- On a part-used sheet, tap the cell to start at (or type the row and column). The cells
+  before it stay blank.
+- If the labels come out shifted, open **Printer offset**, print a **test sheet** (label
+  outlines only), hold it against a sticker sheet up to the light, and adjust right/down in
+  0.25 mm steps (±5 mm). The offset is saved in that browser; **Reset to 0** clears it.
+
 ## Scan-to-move in a different browser
 
 Scan-to-move ("Scan destination tag" in an item's `⋯` sheet) stores the pending move in the

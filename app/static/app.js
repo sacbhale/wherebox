@@ -417,6 +417,80 @@
     if (remove && remove.closest(".case-row")) remove.closest(".case-row").remove();
   });
 
+  // Bulk add: the numbered-series helper appends "Shelf 1" ... "Shelf 10" to the names list
+  // (zero-padded when "from" is typed with a leading zero, e.g. 01). Hidden without JS.
+  document.querySelectorAll("[data-series]").forEach(function (box) { box.hidden = false; });
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-series-fill]");
+    if (!button) return;
+    var box = button.closest("[data-series]");
+    var error = box.querySelector("[data-series-error]");
+    var max = parseInt(box.getAttribute("data-max"), 10);
+    var stem = box.querySelector("[data-series-stem]").value.trim();
+    var fromText = box.querySelector("[data-series-from]").value.trim();
+    var toText = box.querySelector("[data-series-to]").value.trim();
+    var message = "";
+    if (!/^\d+$/.test(fromText) || !/^\d+$/.test(toText)) {
+      message = "Enter whole numbers for From and To.";
+    } else if (parseInt(toText, 10) < parseInt(fromText, 10)) {
+      message = "To must not be less than From.";
+    } else if (parseInt(toText, 10) - parseInt(fromText, 10) >= max) {
+      message = "At most " + max + " locations at a time.";
+    }
+    error.textContent = message;
+    error.hidden = !message;
+    if (message) return;
+    var width = fromText.length > 1 && fromText.charAt(0) === "0" ? fromText.length : 0;
+    var lines = [];
+    for (var n = parseInt(fromText, 10); n <= parseInt(toText, 10); n++) {
+      var number = String(n);
+      while (number.length < width) number = "0" + number;
+      lines.push(stem ? stem + " " + number : number);
+    }
+    var names = box.closest("form").querySelector("textarea[name=names]");
+    var current = names.value.replace(/\s+$/, "");
+    names.value = (current ? current + "\n" : "") + lines.join("\n");
+  });
+
+  // Enter in the series fields adds to the list instead of submitting the save form.
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" || !event.target.matches("[data-series] input")) return;
+    event.preventDefault();
+    event.target.closest("[data-series]").querySelector("[data-series-fill]").click();
+  });
+
+  // Label sheet: remember the printer offset per device, and reapply it when a sheet is
+  // opened without one. Storage may be unavailable; the offset then starts at 0.
+  var OFFSET_KEY = "inventory.labelOffset";
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest("[data-offset-reset]")) return;
+    try { localStorage.removeItem(OFFSET_KEY); } catch (e) { /* no storage */ }
+    var next = new URLSearchParams(window.location.search);
+    next.set("dx", "0");
+    next.set("dy", "0");
+    window.location.assign("?" + next.toString());
+  });
+  if (document.querySelector("[data-label-offset]")) {
+    var params = new URLSearchParams(window.location.search);
+    try {
+      if (params.has("dx") || params.has("dy")) {
+        localStorage.setItem(OFFSET_KEY, JSON.stringify({
+          dx: params.get("dx") || "0", dy: params.get("dy") || "0"
+        }));
+      } else {
+        var saved = JSON.parse(localStorage.getItem(OFFSET_KEY) || "null") || {};
+        var dx = Number(saved.dx) || 0, dy = Number(saved.dy) || 0;
+        var valid = [dx, dy].every(function (v) { return Math.abs(v) <= 5 && v * 4 === Math.round(v * 4); });
+        if (valid && (dx || dy)) {
+          params.set("dx", String(dx));
+          params.set("dy", String(dy));
+          window.location.replace("?" + params.toString());
+        }
+      }
+    } catch (e) { /* no storage: no remembered offset */ }
+  }
+
   // Move focus into a freshly opened sheet (keyboard and screen-reader users).
   document.addEventListener("htmx:afterSwap", function (event) {
     if (!event.detail.target || event.detail.target.id !== "sheet") return;

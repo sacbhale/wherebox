@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Add several locations · Inventory{% endblock %}
+{% block content %}
+<p class="links">{% if parent %}<a href="/l/{{ parent.short_code }}">‹ Back to {{ parent.name }}</a>{% else %}<a href="/">‹ Back home</a>{% endif %}</p>
+<h1>{% if parent %}Add several locations in {{ parent.name }}{% else %}Add several locations{% endif %}</h1>
+{% if parent %}<p class="muted">Inside {{ path }}</p>{% endif %}
+{% if error %}<p class="error" role="alert" id="bulk-error">{{ error }}</p>{% endif %}
+
+<form class="stack" method="post" action="/locations/bulk" id="bulk-form">
+  {% if parent %}<input type="hidden" name="parent_id" value="{{ parent.id }}">{% endif %}
+  {# Fills the list below in the browser; the server only receives the names. #}
+  <fieldset class="series" data-series data-max="{{ max }}" hidden>
+    <legend>Numbered series</legend>
+    <label>Name <input id="series-stem" data-series-stem placeholder="e.g. Shelf" autocomplete="off"></label>
+    <div class="row">
+      <label>From <input id="series-from" data-series-from inputmode="numeric" placeholder="1" autocomplete="off"></label>
+      <label>To <input id="series-to" data-series-to inputmode="numeric" placeholder="10" autocomplete="off"></label>
+    </div>
+    <p class="muted">Type 01 to get leading zeros (Shelf 01 … Shelf 10).</p>
+    <p class="error" data-series-error role="alert" hidden></p>
+    <button type="button" class="secondary" id="series-fill" data-series-fill>Add to list</button>
+  </fieldset>
+  <label>Names, one per line (up to {{ max }})
+    <textarea name="names" id="bulk-names" rows="10" required
+              placeholder="Workbench&#10;Tall cabinet&#10;Red bin">{{ names }}</textarea>
+  </label>
+  <p class="muted">Names that already exist here, or appear twice, are skipped.</p>
+  <button type="submit" id="bulk-save">Add locations</button>
+</form>
+{% endblock %}

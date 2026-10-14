@@ -23,6 +23,15 @@ class LocationError(ValueError):
 
 
 @dataclass(frozen=True)
+class BulkResult:
+    """``create_many``: the new location ids in list order, and the names it skipped, each
+    with the id of the live sibling it matched (a new id when the name was listed twice)."""
+
+    created: list[int]
+    skipped: list[tuple[str, int]]
+
+
+@dataclass(frozen=True)
 class DeleteCounts:
     child_locations: int
     direct_items: int
@@ -237,6 +246,52 @@ def create(conn: sqlite3.Connection, name: str, parent_id: int | None = None) ->
             "VALUES (:short_code, :name, :parent_id)",
             {"name": name, "parent_id": parent_id},
         )
+
+
+BULK_MAX = 50
+
+
+def create_many(
+    conn: sqlite3.Connection, names: list[str], parent_id: int | None = None
+) -> BulkResult:
+    """Create several locations under one parent (roots when None) in one transaction, in the
+    listed order, each with its own short code. Blank names are ignored; a name matching a live
+    sibling or an earlier name in the list (case-insensitively) is skipped, not created. More
+    than BULK_MAX names, or any name over 200 characters, raises LocationError and creates
+    nothing; the error lists the offending line numbers (1-based, blank lines counted)."""
+    lines = [(number, " ".join(raw.split())) for number, raw in enumerate(names, 1)]
+    lines = [(number, name) for number, name in lines if name]
+    if not lines:
+        raise LocationError("Enter at least one name.")
+    if len(lines) > BULK_MAX:
+        raise LocationError(
+            f"At most {BULK_MAX} locations at a time; the list has {len(lines)}. Nothing was added."
+        )
+    too_long = [str(number) for number, name in lines if len(name) > 200]
+    if too_long:
+        raise LocationError(
+            f"Names must be at most 200 characters (line{'s' if len(too_long) > 1 else ''} "
+            f"{', '.join(too_long)}). Nothing was added."
+        )
+    created: list[int] = []
+    skipped: list[tuple[str, int]] = []
+    with write_tx(conn):
+        if parent_id is not None:
+            _require_live(conn, parent_id)
+        taken = {row["name"].casefold(): row["id"] for row in children(conn, parent_id)}
+        for _, name in lines:
+            key = name.casefold()
+            if key in taken:
+                skipped.append((name, taken[key]))
+                continue
+            taken[key], _ = shortcode.insert_with_code(
+                conn,
+                "INSERT INTO locations (short_code, name, parent_id) "
+                "VALUES (:short_code, :name, :parent_id)",
+                {"name": name, "parent_id": parent_id},
+            )
+            created.append(taken[key])
+    return BulkResult(created, skipped)
 
 
 def rename(conn: sqlite3.Connection, location_id: int, name: str) -> None:

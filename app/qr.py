@@ -19,9 +19,10 @@ def svg(url: str, scale: int = 8) -> bytes:
     return out.getvalue()
 
 
-def svg_inline(url: str, scale: int = 6) -> str:
-    """An ``<svg>`` element for embedding in HTML (the print label)."""
-    return _make(url).svg_inline(scale=scale, border=4)
+def svg_inline(url: str, scale: int = 6, omitsize: bool = False) -> str:
+    """An ``<svg>`` element for embedding in HTML (the print labels). ``omitsize`` gives it a
+    viewBox instead of a fixed width and height, so CSS can size it."""
+    return _make(url).svg_inline(scale=scale, border=4, omitsize=omitsize)
 
 
 def png(url: str, scale: int = 10) -> bytes:

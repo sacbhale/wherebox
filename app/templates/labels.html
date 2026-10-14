@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if test %}Test sheet{% else %}Labels{% endif %} · Inventory</title>
+  <link rel="stylesheet" href="/static/app.css">
+  {# Only this page prints edge to edge: the sheets carry the sticker sheet's own margins. #}
+  <style>@page { size: A4; margin: 0; }</style>
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="labels-page">
+{% set query = {"ids": ids, "dx": dx, "dy": dy} %}
+{% set start = "&amp;start_row=%d&amp;start_col=%d"|format(start_row, start_col)|safe %}
+<main class="page">
+  <div class="no-print" id="label-controls" data-label-offset>
+    <p class="links"><a href="/">‹ Home</a></p>
+    {% if test %}
+    <h1>Test sheet</h1>
+    <p>Prints only the 21 label outlines. Hold the printout against a sticker sheet up to the
+      light and adjust the offset until the outlines match.</p>
+    {% else %}
+    <h1>{{ count }} label{{ "s" if count != 1 }} on {{ sheets|length }} sheet{{ "s" if sheets|length != 1 }}</h1>
+    <p>For A4 sticker sheets with 21 labels (3 × 7, 63.5 × 38.1 mm).
+      Tap where to start if part of the sheet is used.</p>
+    <div class="sheet-map" id="sheet-map" role="group" aria-label="Start position">
+      {% for r in range(1, rows + 1) %}{% for c in range(1, cols + 1) %}
+      {% set index = (r - 1) * cols + c - 1 %}
+      {% set state = "used" if index < first else ("print" if index < first + count else "free") %}
+      <a class="sheet-cell {{ state }}" id="cell-{{ r }}-{{ c }}"
+         href="/labels?{{ query|urlencode }}&amp;start_row={{ r }}&amp;start_col={{ c }}"
+         aria-label="Start at row {{ r }}, column {{ c }}"
+         {% if r == start_row and c == start_col %}aria-current="true"{% endif %}>
+        {%- if state == "print" %}{{ index - first + 1 }}{% endif -%}
+      </a>
+      {% endfor %}{% endfor %}
+    </div>
+    {% endif %}
+    <form class="stack sheet-form" method="get" action="/labels">
+      <input type="hidden" name="ids" value="{{ ids }}">
+      {% if test %}
+      <input type="hidden" name="test" value="1">
+      <input type="hidden" name="start_row" value="{{ start_row }}">
+      <input type="hidden" name="start_col" value="{{ start_col }}">
+      {% else %}
+      <div class="row">
+        <label>Start at row <input type="number" name="start_row" id="start-row" min="1" max="{{ rows }}" value="{{ start_row }}"></label>
+        <label>column <input type="number" name="start_col" id="start-col" min="1" max="{{ cols }}" value="{{ start_col }}"></label>
+      </div>
+      {% endif %}
+      <details class="panel" {% if test or dx != "0" or dy != "0" %}open{% endif %}>
+        <summary>Printer offset: {{ offset_words }}{% if offset_words != "none" %} — saved on this device{% endif %}</summary>
+        <div class="row">
+          <label>Right <input type="number" name="dx" id="offset-dx" min="-5" max="5" step="0.25" value="{{ dx }}"></label>
+          <label>Down <input type="number" name="dy" id="offset-dy" min="-5" max="5" step="0.25" value="{{ dy }}"></label>
+        </div>
+        <p class="muted">Shifts every label, to make up for a printer that prints off-centre.
+          Saved on this device.</p>
+        <button type="button" class="secondary" id="offset-reset" data-offset-reset>Reset to 0</button>
+      </details>
+      <button type="submit" class="secondary" id="sheet-apply">Update</button>
+    </form>
+    <p class="notice">Print from a computer if you can. In the print dialog choose paper size
+      <strong>A4</strong>, scale <strong>100% / Actual size</strong> (not “Fit to page”), margins
+      None or Default. On a phone: Share → Print → Save as PDF (or save the page as PDF), then
+      print the PDF at 100%.</p>
+    <p class="actions">
+      <button type="button" id="sheet-print" data-print>Print</button>
+      {% if test %}
+      <a class="button secondary" href="/labels?{{ query|urlencode }}{{ start }}">Back to labels</a>
+      {% else %}
+      <a class="button secondary" id="sheet-test" href="/labels?{{ query|urlencode }}{{ start }}&amp;test=1">Print a test sheet</a>
+      {% endif %}
+    </p>
+  </div>
+  <div class="label-sheets">
+    {% for sheet in sheets %}
+    <div class="label-sheet{% if test %} test{% endif %}">
+      {% for cell, label in sheet %}
+      <div class="sheet-label" data-row="{{ cell.row }}" data-col="{{ cell.col }}"
+           style="left: {{ cell.x }}mm; top: {{ cell.y }}mm">
+        {% if label %}
+        {{ label.qr_svg|safe }}
+        <div class="sheet-text">
+          <p class="sheet-name">{{ label.name }}</p>
+          {% if label.path %}<p class="sheet-path">{{ label.path }}</p>{% endif %}
+          <p class="sheet-code">{{ label.code }}</p>
+          <p class="sheet-url">{{ label.url_text }}</p>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</main>
+</body>
+</html>
