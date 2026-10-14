@@ -11,7 +11,7 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 
-from tests.conftest import TEST_PASSWORD
+from tests.conftest import TEST_PASSWORD, TEST_USERNAME
 
 ENTRYPOINT = Path(__file__).resolve().parents[2] / "docker-entrypoint.sh"
 TRUSTED = "127.0.0.1,172.16.0.0/12"
@@ -31,6 +31,7 @@ def loaded_app(monkeypatch, data_dir):
     monkeypatch.setenv("DATA_DIR", str(data_dir))
     monkeypatch.setenv("WORKER_AUTOSTART", "false")
     monkeypatch.setenv("AI_PROVIDER", "fake")
+    monkeypatch.setenv("HOUSEHOLD_USERNAME", TEST_USERNAME)
     monkeypatch.setenv("HOUSEHOLD_PASSWORD", TEST_PASSWORD)
     monkeypatch.setenv("FORWARDED_ALLOW_IPS", TRUSTED)
     config = uvicorn.Config("app.main:create_app", factory=True, proxy_headers=True)
@@ -61,7 +62,7 @@ def _login(app, client_ip: str, headers: dict[str, str]):
     with TestClient(app, client=(client_ip, 40000)) as tc:
         return tc.post(
             "/login",
-            data={"password": TEST_PASSWORD},
+            data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
             headers={"Host": "inv.example.com", **headers},
             follow_redirects=False,
         )

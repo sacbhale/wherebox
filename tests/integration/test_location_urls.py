@@ -8,7 +8,7 @@ import pytest
 from app.db.connection import write_tx
 from app.db.timestamps import utcnow
 from app.inventory import items, locations, shortcode
-from tests.conftest import TEST_PASSWORD, logged_in
+from tests.conftest import TEST_PASSWORD, TEST_USERNAME, logged_in
 from tests.inventory_helpers import HX, code_of, item_location, make_chain, open_db, seed_items
 
 
@@ -370,7 +370,11 @@ def test_scan_to_move_logged_out_scan_applies_after_login(auth_client, auth_sett
 
     login = auth_client.post(
         "/login",
-        data={"password": TEST_PASSWORD, "next": f"/l/{s['attic_code']}"},
+        data={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD,
+            "next": f"/l/{s['attic_code']}",
+        },
         follow_redirects=False,
     )
     assert login.status_code == 303 and login.headers["location"] == f"/l/{s['attic_code']}"

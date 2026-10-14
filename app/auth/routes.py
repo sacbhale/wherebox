@@ -53,8 +53,13 @@ def new_setup_token() -> str:
 
 
 def init_auth(app: FastAPI, conn: sqlite3.Connection) -> None:
-    """Startup: apply HOUSEHOLD_PASSWORD, then issue a setup token if no password exists."""
+    """Startup: apply HOUSEHOLD_USERNAME and HOUSEHOLD_PASSWORD, then issue a setup token if
+    no password exists."""
     settings: Settings = app.state.settings
+    if settings.household_username is not None and passwords.apply_username_env_override(
+        conn, settings.household_username
+    ):
+        logger.warning("HOUSEHOLD_USERNAME applied: login name set, sessions cleared")
     if settings.household_password is not None:
         password = settings.household_password.get_secret_value()
         if password and passwords.apply_env_override(conn, password):
@@ -89,6 +94,7 @@ def login_form(request: Request, conn: Conn, next: str | None = None) -> Respons
 async def login(
     request: Request,
     conn: Conn,
+    username: Annotated[str, Form()] = "",
     password: Annotated[str, Form()] = "",
     next: Annotated[str, Form()] = "/",
 ) -> Response:
@@ -107,12 +113,12 @@ async def login(
         return blocked
     throttle.reserve(ip)  # counts as a failure until verified, so concurrent tries can't exceed
     try:
-        verified = await run_in_threadpool(passwords.verify_password, conn, password)
+        verified = await run_in_threadpool(passwords.verify_login, conn, username, password)
     finally:
         throttle.release(ip)
     if not verified:
         throttle.record_failure(ip)
-        return _login_page(request, target, "Wrong password.", 401)
+        return _login_page(request, target, "Wrong login name or password.", 401)
     throttle.record_success(ip)
     settings = request.app.state.settings
     # The old (typically expired) cookie lets a pending scan-to-move survive re-login.
@@ -138,12 +144,25 @@ def logout(request: Request, conn: Conn) -> Response:
     return response
 
 
+def _setup_page(
+    request: Request, conn: sqlite3.Connection, error: str | None, status: int
+) -> Response:
+    locked = request.app.state.settings.household_username is not None
+    name = passwords.get_username(conn) if locked else None
+    return templates.TemplateResponse(
+        request,
+        "setup.html",
+        {"error": error, "username": name or "", "locked": locked},
+        status_code=status,
+    )
+
+
 @router.get("/setup")
 def setup_form(request: Request, conn: Conn) -> Response:
     if passwords.has_password(conn):
         raise HTTPException(status_code=404)
     ensure_setup_token(request)
-    return templates.TemplateResponse(request, "setup.html", {"error": None})
+    return _setup_page(request, conn, None, 200)
 
 
 @router.post("/setup")
@@ -151,6 +170,7 @@ def setup(
     request: Request,
     conn: Conn,
     token: Annotated[str, Form()] = "",
+    username: Annotated[str, Form()] = "",
     password: Annotated[str, Form()] = "",
     confirm: Annotated[str, Form()] = "",
 ) -> Response:
@@ -158,20 +178,26 @@ def setup(
         raise HTTPException(status_code=404)
     expected = ensure_setup_token(request)
     if not token or not secrets.compare_digest(token.encode(), expected.encode()):
-        return templates.TemplateResponse(
-            request, "setup.html", {"error": "Invalid setup token."}, status_code=403
-        )
+        return _setup_page(request, conn, "Invalid setup token.", 403)
+    if request.app.state.settings.household_username is not None:
+        username = passwords.get_username(conn) or ""  # HOUSEHOLD_USERNAME wins
     error = None
     if not password:
         error = "Choose a password."
     elif password != confirm:
         error = "The passwords do not match."
+    else:
+        try:
+            username = passwords.validate_username(username)
+        except ValueError:
+            error = "Choose a login name (1-64 characters, no control or invisible characters)."
     if error:
-        return templates.TemplateResponse(request, "setup.html", {"error": error}, status_code=400)
-    passwords.set_password(conn, password)
+        return _setup_page(request, conn, error, 400)
+    if not passwords.set_credentials(conn, username, password):
+        raise HTTPException(status_code=404)
     request.app.state.setup_token = None
     request.app.state.password_set = True
-    logger.info("Household password set via /setup; setup token discarded")
+    logger.info("Household login name and password set via /setup; setup token discarded")
     token_value = sessions.create_session(
         conn, sessions.now(request), request.app.state.settings.session_days
     )

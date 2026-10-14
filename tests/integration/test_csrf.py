@@ -6,12 +6,15 @@ from fastapi.testclient import TestClient
 
 from app.auth.csrf import origin_pair, require_htmx
 from app.main import create_app
-from tests.conftest import ORIGIN, TEST_PASSWORD
+from tests.conftest import ORIGIN, TEST_PASSWORD, TEST_USERNAME
 
 
 def _login(client: TestClient, **headers: str):
     return client.post(
-        "/login", data={"password": TEST_PASSWORD}, headers=headers, follow_redirects=False
+        "/login",
+        data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        headers=headers,
+        follow_redirects=False,
     )
 
 

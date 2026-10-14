@@ -1,4 +1,4 @@
-"""Access control, login/logout, sessions, password changes and throttling.
+"""Access control, login/logout, sessions, password and login-name changes and throttling.
 
 Covers AC-10, AC-27, AC-28, AC-29, AC-30 and the relative-redirect part of AC-31.
 """
@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from starlette.routing import Mount
 
 from app import cli
@@ -24,7 +25,8 @@ from app.config import Settings
 from app.db.connection import connect, write_tx
 from app.db.timestamps import utcnow
 from app.main import create_app
-from tests.conftest import ORIGIN, TEST_PASSWORD
+from app.settings_info import NO_USERNAME_WARNING
+from tests.conftest import ORIGIN, TEST_PASSWORD, TEST_USERNAME
 
 # ---------------------------------------------------------------- AC-27: every route
 
@@ -132,7 +134,9 @@ def test_logged_out_location_url_round_trips_through_login(anon):
     assert 'name="next" value="/l/ABC123"' in page.text
 
     login = anon.post(
-        "/login", data={"password": TEST_PASSWORD, "next": "/l/ABC123"}, follow_redirects=False
+        "/login",
+        data={"username": TEST_USERNAME, "password": TEST_PASSWORD, "next": "/l/ABC123"},
+        follow_redirects=False,
     )
     assert login.status_code == 303
     assert login.headers["location"] == "/l/ABC123"
@@ -163,16 +167,18 @@ def test_safe_next(value, expected):
 
 def test_login_with_unsafe_next_lands_on_home(anon):
     login = anon.post(
-        "/login", data={"password": TEST_PASSWORD, "next": "//evil.example"}, follow_redirects=False
+        "/login",
+        data={"username": TEST_USERNAME, "password": TEST_PASSWORD, "next": "//evil.example"},
+        follow_redirects=False,
     )
     assert login.headers["location"] == "/"
 
 
 def test_wrong_password_is_rejected_without_cookie(anon):
-    response = anon.post("/login", data={"password": "nope"}, follow_redirects=False)
+    response = _attempt(anon, "nope")
     assert response.status_code == 401
     assert "set-cookie" not in response.headers
-    assert "Wrong password" in response.text
+    assert "Wrong login name or password." in response.text
 
 
 def test_all_redirects_are_relative(anon, make_settings, tmp_path):
@@ -180,7 +186,11 @@ def test_all_redirects_are_relative(anon, make_settings, tmp_path):
     responses = [
         anon.get("/", follow_redirects=False),
         anon.get("/l/ABC123", follow_redirects=False),
-        anon.post("/login", data={"password": TEST_PASSWORD}, follow_redirects=False),
+        anon.post(
+            "/login",
+            data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+            follow_redirects=False,
+        ),
         anon.post("/logout", follow_redirects=False),
     ]
     https = TestClient(anon.app, base_url="https://inv.example.com", headers={"Origin": ORIGIN})
@@ -193,7 +203,7 @@ def test_all_redirects_are_relative(anon, make_settings, tmp_path):
         responses.append(
             fresh.post(
                 "/setup",
-                data={"token": token, "password": "pw", "confirm": "pw"},
+                data={"token": token, "username": "home", "password": "pw", "confirm": "pw"},
                 follow_redirects=False,
             )
         )
@@ -208,7 +218,11 @@ def test_all_redirects_are_relative(anon, make_settings, tmp_path):
 
 
 def test_session_cookie_attributes(anon):
-    response = anon.post("/login", data={"password": TEST_PASSWORD}, follow_redirects=False)
+    response = anon.post(
+        "/login",
+        data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        follow_redirects=False,
+    )
     cookie = response.headers["set-cookie"]
     assert cookie.startswith(f"{COOKIE_NAME}=")
     assert "Max-Age=2592000" in cookie  # 30 days
@@ -238,7 +252,7 @@ def test_cookie_secure_forced(make_settings, setting, secure):
     with TestClient(create_app(settings), base_url=base) as client:
         response = client.post(
             "/login",
-            data={"password": TEST_PASSWORD},
+            data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
             headers={"Origin": base},
             follow_redirects=False,
         )
@@ -331,16 +345,19 @@ def test_password_change_invalidates_sessions(auth_client, auth_settings):
     finally:
         conn.close()
     assert auth_client.get("/api/export.json").status_code == 401
-    bad = auth_client.post("/login", data={"password": TEST_PASSWORD}, follow_redirects=False)
+    bad = auth_client.post(
+        "/login",
+        data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        follow_redirects=False,
+    )
     assert bad.status_code == 401
-    good = auth_client.post("/login", data={"password": "a new password"}, follow_redirects=False)
-    assert good.status_code == 303
+    assert _attempt(auth_client, "a new password").status_code == 303
 
 
 def test_env_override_replaces_changed_hash_and_clears_sessions(make_settings):
     first = make_settings(household_password=TEST_PASSWORD)
     with TestClient(create_app(first), headers={"Origin": ORIGIN}) as client:
-        client.post("/login", data={"password": TEST_PASSWORD})
+        client.post("/login", data={"username": TEST_USERNAME, "password": TEST_PASSWORD})
         cookie = client.cookies[COOKIE_NAME]
     original_hash = _hash(first)
 
@@ -355,8 +372,7 @@ def test_env_override_replaces_changed_hash_and_clears_sessions(make_settings):
     with TestClient(create_app(second), headers={"Origin": ORIGIN}) as client:
         client.cookies.set(COOKIE_NAME, cookie)
         assert client.get("/api/export.json").status_code == 401
-        ok = client.post("/login", data={"password": "rotated password"}, follow_redirects=False)
-        assert ok.status_code == 303
+        assert _attempt(client, "rotated password").status_code == 303
     assert _hash(second) != original_hash
 
 
@@ -365,8 +381,7 @@ def test_cli_set_password_stores_hash_and_clears_sessions(auth_client, make_sett
     monkeypatch.setattr("sys.stdin", io.StringIO("from the cli\n"))
     assert cli.main(["set-password"], make_settings()) == 0
     assert auth_client.get("/api/export.json").status_code == 401
-    ok = auth_client.post("/login", data={"password": "from the cli"}, follow_redirects=False)
-    assert ok.status_code == 303
+    assert _attempt(auth_client, "from the cli").status_code == 303
     assert _hash(make_settings()).startswith("$argon2id$")
 
 
@@ -378,8 +393,10 @@ def test_cli_rejects_empty_password(make_settings, monkeypatch):
 # ---------------------------------------------------------------- throttle (AC-30)
 
 
-def _attempt(client: TestClient, password: str):
-    return client.post("/login", data={"password": password}, follow_redirects=False)
+def _attempt(client: TestClient, password: str, username: str = TEST_USERNAME):
+    return client.post(
+        "/login", data={"username": username, "password": password}, follow_redirects=False
+    )
 
 
 def test_sixth_failure_from_one_ip_is_429_other_ip_unaffected(auth_settings):
@@ -443,3 +460,201 @@ def test_concurrent_wrong_attempts_cannot_exceed_the_per_ip_limit(auth_settings,
             for thread in threads:
                 thread.join()
     assert sorted(statuses) == [401] * 5 + [429] * 3
+
+
+# ---------------------------------------------------------------- login name
+
+WRONG_LOGIN = "Wrong login name or password."
+
+
+def _username(settings) -> str | None:
+    conn = connect(settings.db_path)
+    try:
+        return passwords.get_username(conn)
+    finally:
+        conn.close()
+
+
+def test_right_name_and_password_log_in(anon):
+    response = _attempt(anon, TEST_PASSWORD)
+    assert response.status_code == 303
+    assert response.headers["set-cookie"].startswith(f"{COOKIE_NAME}=")
+
+
+@pytest.mark.parametrize(
+    ("username", "password"),
+    [
+        ("someone", TEST_PASSWORD),  # wrong name, right password
+        (TEST_USERNAME, "wrong"),  # right name, wrong password
+        ("someone", "wrong"),  # both wrong
+        ("", TEST_PASSWORD),  # no name: only legacy mode accepts the password alone
+    ],
+)
+def test_every_wrong_login_gets_the_same_401(anon, username, password):
+    reference = _attempt(anon, "wrong", "someone")
+    response = _attempt(anon, password, username)
+    assert response.status_code == 401
+    assert "set-cookie" not in response.headers
+    assert WRONG_LOGIN in response.text
+    assert response.text == reference.text
+
+
+FULLWIDTH_NAME = "\uff48\uff4f\uff55\uff53\uff45\uff48\uff4f\uff4c\uff44"  # NFKC: household
+
+
+@pytest.mark.parametrize("username", ["HOUSEHOLD", "  Household  ", FULLWIDTH_NAME])
+def test_login_name_is_case_insensitive_and_trimmed(anon, username):
+    assert _attempt(anon, TEST_PASSWORD, username).status_code == 303
+
+
+def test_password_is_verified_even_when_the_name_is_wrong(anon, monkeypatch):
+    calls: list[str] = []
+    real_verify = passwords.verify_hash
+
+    def spy(stored_hash: str, password: str) -> bool:
+        calls.append(password)
+        return real_verify(stored_hash, password)
+
+    monkeypatch.setattr(passwords, "verify_hash", spy)
+    assert _attempt(anon, TEST_PASSWORD, "someone").status_code == 401
+    assert calls == [TEST_PASSWORD]
+
+
+def test_throttle_counts_wrong_names(auth_settings):
+    app = create_app(auth_settings)
+    with TestClient(app, headers={"Origin": ORIGIN}, client=("198.51.100.9", 1)) as client:
+        codes = [_attempt(client, TEST_PASSWORD, "someone").status_code for _ in range(6)]
+    assert codes == [401] * 5 + [429]
+
+
+def test_login_form_fields(anon):
+    page = anon.get("/login").text
+    assert re.search(
+        r'<input id="username" name="username" type="text" autocomplete="username" '
+        r'autocapitalize="none" autocorrect="off" spellcheck="false"',
+        page,
+    )
+    assert re.search(r'<input id="password"[^>]* autocomplete="current-password"', page)
+
+
+@pytest.fixture
+def legacy_settings(make_settings):
+    """An upgraded instance: a password but no login name configured."""
+    return make_settings(household_username=None, household_password=TEST_PASSWORD)
+
+
+@pytest.fixture
+def legacy(legacy_settings):
+    with TestClient(create_app(legacy_settings), headers={"Origin": ORIGIN}) as test_client:
+        yield test_client
+
+
+def test_legacy_mode_password_alone_logs_in_and_name_is_ignored(legacy):
+    assert _attempt(legacy, TEST_PASSWORD, "").status_code == 303
+    assert _attempt(legacy, TEST_PASSWORD, "anything at all").status_code == 303
+    wrong = _attempt(legacy, "wrong", "")
+    assert wrong.status_code == 401
+    assert WRONG_LOGIN in wrong.text
+
+
+def test_legacy_mode_is_not_revealed_on_the_login_page(legacy, anon):
+    page = legacy.get("/login").text
+    assert page == anon.get("/login").text
+    assert 'name="username"' in page
+
+
+def test_legacy_mode_warns_on_settings(legacy):
+    assert _attempt(legacy, TEST_PASSWORD, "").status_code == 303
+    assert NO_USERNAME_WARNING in legacy.get("/settings").text
+
+
+def test_no_settings_warning_with_a_login_name(auth_client):
+    assert NO_USERNAME_WARNING not in auth_client.get("/settings").text
+
+
+def test_env_username_sets_name_and_clears_sessions_once(make_settings, legacy_settings):
+    # Before the upgrade: no name; a password-only session.
+    with TestClient(create_app(legacy_settings), headers={"Origin": ORIGIN}) as client:
+        assert _attempt(client, TEST_PASSWORD, "").status_code == 303
+        cookie = client.cookies[COOKIE_NAME]
+    with TestClient(create_app(legacy_settings), headers={"Origin": ORIGIN}) as client:
+        client.cookies.set(COOKIE_NAME, cookie)
+        assert client.get("/api/export.json").status_code == 200  # still valid after restart
+
+    # HOUSEHOLD_USERNAME added: stored, every session cleared, name + password needed.
+    named = make_settings(household_password=TEST_PASSWORD)
+    with TestClient(create_app(named), headers={"Origin": ORIGIN}) as client:
+        client.cookies.set(COOKIE_NAME, cookie)
+        assert client.get("/api/export.json").status_code == 401
+        assert _attempt(client, TEST_PASSWORD, "").status_code == 401
+        login = _attempt(client, TEST_PASSWORD)
+        assert login.status_code == 303
+        cookie = login.cookies[COOKIE_NAME]
+    assert _username(named) == TEST_USERNAME
+
+    # The same name on restart (in any case): nothing changes, the session survives.
+    same = make_settings(household_username=" HouseHold ", household_password=TEST_PASSWORD)
+    with TestClient(create_app(same), headers={"Origin": ORIGIN}) as client:
+        client.cookies.set(COOKIE_NAME, cookie)
+        assert client.get("/api/export.json").status_code == 200
+    assert _username(same) == TEST_USERNAME
+
+    # A different name: stored, sessions cleared again.
+    renamed = make_settings(household_username="Attic", household_password=TEST_PASSWORD)
+    with TestClient(create_app(renamed), headers={"Origin": ORIGIN}) as client:
+        client.cookies.set(COOKIE_NAME, cookie)
+        assert client.get("/api/export.json").status_code == 401
+        assert _attempt(client, TEST_PASSWORD).status_code == 401
+        assert _attempt(client, TEST_PASSWORD, "attic").status_code == 303
+    assert _username(renamed) == "Attic"
+
+
+def test_upgrade_from_setup_password_to_env_username(make_settings):
+    """The live instance: password set via /setup (no env password, no name), then a name."""
+    legacy_settings = make_settings(household_username=None)
+    with TestClient(create_app(legacy_settings), headers={"Origin": ORIGIN}) as client:
+        conn = connect(legacy_settings.db_path)
+        try:
+            passwords.set_password(conn, TEST_PASSWORD)
+        finally:
+            conn.close()
+        login = _attempt(client, TEST_PASSWORD, "")
+        assert login.status_code == 303
+        cookie = login.cookies[COOKIE_NAME]
+        assert NO_USERNAME_WARNING in client.get("/settings").text
+
+    named = make_settings()
+    with TestClient(create_app(named), headers={"Origin": ORIGIN}) as client:
+        client.cookies.set(COOKIE_NAME, cookie)
+        assert client.get("/api/export.json").status_code == 401  # sessions cleared
+        assert _attempt(client, TEST_PASSWORD, "").status_code == 401
+        assert _attempt(client, TEST_PASSWORD).status_code == 303
+        assert NO_USERNAME_WARNING not in client.get("/settings").text
+
+
+@pytest.mark.parametrize("value", ["   ", "x" * 65, "bad\x07name"])
+def test_invalid_env_username_is_a_startup_error(monkeypatch, data_dir, value):
+    monkeypatch.setenv("HOUSEHOLD_USERNAME", value)
+    with pytest.raises(ValidationError, match="HOUSEHOLD_USERNAME is invalid: the login name"):
+        Settings(public_base_url="http://testserver", data_dir=data_dir)
+
+
+def test_cli_set_username_sets_name_and_clears_sessions(auth_client, make_settings):
+    assert auth_client.get("/api/export.json").status_code == 200
+    assert cli.main(["set-username", "--name", "  Kitchen  "], make_settings()) == 0
+    assert _username(make_settings()) == "Kitchen"
+    assert auth_client.get("/api/export.json").status_code == 401
+    assert _attempt(auth_client, TEST_PASSWORD).status_code == 401
+    assert _attempt(auth_client, TEST_PASSWORD, "kitchen").status_code == 303
+
+
+def test_cli_set_username_reads_stdin(make_settings, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("Attic\n"))
+    assert cli.main(["set-username"], make_settings()) == 0
+    assert _username(make_settings()) == "Attic"
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 65, "a\tb"])
+def test_cli_set_username_rejects_invalid_names(make_settings, name):
+    assert cli.main(["set-username", "--name", name], make_settings()) == 1
+    assert not make_settings().db_path.exists()  # rejected before touching the database

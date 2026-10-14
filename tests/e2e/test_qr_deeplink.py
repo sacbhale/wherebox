@@ -13,6 +13,7 @@ def test_qr_link_logged_out_goes_through_login_to_the_location(server, page: Pag
     parts = urlsplit(page.url)
     assert parts.path == "/login"
     assert parse_qs(parts.query)["next"] == [f"/l/{code}"]
+    page.fill("#username", "test")
     page.fill("#password", "test")
     page.locator("button[type=submit]").tap()
     page.wait_for_url(server.url(f"/l/{code}"))

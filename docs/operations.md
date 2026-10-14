@@ -170,11 +170,37 @@ repeats this warning. The browser's `Origin` must match the `PUBLIC_BASE_URL` ho
 request's Host, or one of the comma-separated names in `ALLOWED_HOSTS`. Otherwise forms
 return 403.
 
-## Passwords and login
+## Login name, passwords and login
+
+The household shares **one login**: a login name and a password (no per-person accounts).
 
 - **First start without a password.** Every page redirects to `/setup`, which asks for a
   one-time **setup token** printed in the container logs (`docker compose logs app`, look
-  for `SETUP TOKEN`). After setup the token is discarded and `/setup` returns 404.
+  for `SETUP TOKEN`), the login name and the password. After setup the token is discarded
+  and `/setup` returns 404.
+- **The login name** is 1-64 characters (surrounding spaces are trimmed) without control
+  characters. It is compared **case-insensitively** (Unicode NFKC + casefold), so a phone
+  that capitalises the first letter still logs in. Set it with **`HOUSEHOLD_USERNAME` in
+  `.env`**: on start, a value that differs from the stored name replaces it and signs out
+  all sessions once (an invalid value stops the app with an error naming the rule). Or set
+  it with the CLI, which also signs out all sessions (`HOUSEHOLD_USERNAME` wins on the
+  next restart if it differs):
+
+  ```sh
+  docker compose exec app python -m app.cli set-username            # prompts
+  docker compose exec app python -m app.cli set-username --name Kim
+  ```
+
+- **Why a name helps:** an attacker must guess the name *and* the password, and a wrong
+  name gets the same "Wrong login name or password." answer, after the same password
+  check, as a wrong password. This only adds strength if the name is **not guessable**: the
+  household's surname, "admin" or "home" add little. The long passphrase remains the main
+  defence.
+- **Legacy mode (upgrades):** an instance set up before login names existed has no name
+  stored. Until one is set, the password alone logs in (the name field is ignored) and
+  Settings warns: "No login name is set". Existing sessions stay valid until the name is
+  set; then everyone logs in again with name + password. The login page looks the same
+  either way.
 - **`HOUSEHOLD_PASSWORD` in `.env`** is hashed at startup and **replaces the stored
   password on every restart**. It overrides anything set with `set-password`, so remove
   it from `.env` if you manage the password with the CLI.
@@ -184,11 +210,12 @@ return 403.
   docker compose exec app python -m app.cli set-password
   ```
 
-  Every password change (setup, env override or CLI) signs out all sessions.
+  Every password or login-name change (setup, env override or CLI) signs out all sessions.
 - **Sessions** last `SESSION_DAYS` (30) and are extended while in use.
 
 ### Login throttle and its trade-off
 
+- Every failed login counts, whether the name, the password or both were wrong.
 - One client IP gets 5 failed logins per 15 minutes, then HTTP 429 with `Retry-After`.
   Other IPs are unaffected.
 - Once more than 50 logins fail across all IPs in 15 minutes, every attempt (right or
@@ -524,6 +551,10 @@ directory.
    `docker compose run --entrypoint python` runs as root, so the restored file is
    root-owned until the next normal start fixes ownership. With compose `user:`, add
    `--user <uid>:<gid>`.
+4. A backup from before login names has no name, so the app runs in legacy mode (password
+   alone logs in, Settings warns). Set `HOUSEHOLD_USERNAME` in `.env` (recommended: it is
+   re-applied on every start), or run `set-username` after restoring. With
+   `HOUSEHOLD_USERNAME` set, the env value always wins on restart, and `/setup` uses it too.
 
 `bash tests/scripts/restore_check.sh` tests this path end to end. It seeds a container,
 copies its data directory, starts a second container on the copy, and checks that the

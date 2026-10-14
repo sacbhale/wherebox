@@ -11,7 +11,8 @@ reverse proxy.
   scan-to-move (start a move, then scan the destination's tag).
 - AI capture runs in a background queue with retry. A review queue collects low-confidence
   items and proposals from reconciling a shelf. Monthly budget in USD.
-- One shared household password (argon2id), 30-day sessions and a login throttle.
+- One shared household login (login name + argon2id password), 30-day sessions and a login
+  throttle.
 - Automatic `backups/latest.db` snapshots, a JSON export, and a copy-the-directory
   restore.
 
@@ -31,6 +32,7 @@ Operator commands run inside the container:
 
 ```sh
 docker compose exec app python -m app.cli set-password
+docker compose exec app python -m app.cli set-username   # the login name (or --name NAME)
 docker compose exec app python -m app.cli backup
 docker compose exec app python -m app.cli check        # PRAGMA integrity_check
 docker compose exec app python -m app.cli export > inventory-export.json
@@ -52,7 +54,8 @@ bash tests/scripts/restore_check.sh   # Docker: restore from a copied data dir (
 Run locally without Docker (the fake AI provider replays `tests/fixtures/fake_script.json`):
 
 ```sh
-PUBLIC_BASE_URL=http://127.0.0.1:8000 DATA_DIR=./data HOUSEHOLD_PASSWORD=dev \
+PUBLIC_BASE_URL=http://127.0.0.1:8000 DATA_DIR=./data \
+HOUSEHOLD_USERNAME=dev HOUSEHOLD_PASSWORD=dev \
 AI_PROVIDER=fake FAKE_AI_SCRIPT=tests/fixtures/fake_script.json \
 uv run uvicorn app.main:create_app --factory --port 8000
 ```
@@ -60,7 +63,7 @@ uv run uvicorn app.main:create_app --factory --port 8000
 ## Docs
 
 - [docs/operations.md](docs/operations.md): install, file ownership, reverse proxies and
-  `FORWARDED_ALLOW_IPS`, cookies, passwords and the throttle, AI cost and budget, backups
-  and restore, the scan-to-move caveat, and the manual verification record.
+  `FORWARDED_ALLOW_IPS`, cookies, the login name, passwords and the throttle, AI cost and
+  budget, backups and restore, the scan-to-move caveat, and the manual verification record.
 - [docs/ai-provider-contract.md](docs/ai-provider-contract.md): the AI provider
   interface, error classes and the fake provider's script format.

@@ -35,6 +35,7 @@ from app.config import Settings
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
+USERNAME = "test"
 PASSWORD = "test"
 VIEWPORT = {"width": 390, "height": 844}
 DEFAULT_BROWSERS = ["chromium", "webkit"]
@@ -189,6 +190,7 @@ class LiveServer:
 
     def login(self, page: Page, path: str = "/") -> None:
         page.goto(self.url(f"/login?next={path}"))
+        page.fill("#username", USERNAME)
         page.fill("#password", PASSWORD)
         page.locator("button[type=submit]").tap()
         page.wait_for_url(self.url(path))
@@ -233,6 +235,7 @@ def server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[LiveServe
         "OPENROUTER_CATALOG_FILE": str(FIXTURES / "openrouter" / "models.json"),
         "AI_MODEL": "test/model-a",
         "PUBLIC_BASE_URL": base_url,
+        "HOUSEHOLD_USERNAME": USERNAME,
         "HOUSEHOLD_PASSWORD": PASSWORD,
         "WORKER_AUTOSTART": "true",
     }
@@ -253,7 +256,9 @@ def server(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[LiveServe
             if process.poll() is not None or time.monotonic() > deadline:
                 pytest.fail(f"server did not start:\n{log_path.read_text()}")
             time.sleep(0.1)
-        response = http.post("/login", data={"password": PASSWORD, "next": "/"})
+        response = http.post(
+            "/login", data={"username": USERNAME, "password": PASSWORD, "next": "/"}
+        )
         assert response.status_code == 303, response.text
         yield LiveServer(base_url, data_dir, http)
     finally:

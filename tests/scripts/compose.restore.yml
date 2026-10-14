@@ -7,6 +7,7 @@ services:
     env_file: !reset []
     environment:
       PUBLIC_BASE_URL: http://127.0.0.1:18000
+      HOUSEHOLD_USERNAME: restore
       HOUSEHOLD_PASSWORD: restore-test
       AI_PROVIDER: fake
       FAKE_AI_SCRIPT: /fixtures/fake_script.json

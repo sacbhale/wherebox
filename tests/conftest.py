@@ -40,7 +40,8 @@ def data_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def make_settings(data_dir: Path) -> SettingsFactory:
-    """Settings for tests; keyword overrides use field names (e.g. monthly_ai_budget=5)."""
+    """Settings for tests (login name TEST_USERNAME); keyword overrides use field names
+    (e.g. monthly_ai_budget=5, household_username=None for legacy mode)."""
 
     def factory(**overrides: object) -> Settings:
         values: dict[str, object] = {
@@ -48,6 +49,7 @@ def make_settings(data_dir: Path) -> SettingsFactory:
             "data_dir": data_dir,
             "ai_provider": "fake",
             "worker_autostart": False,
+            "household_username": TEST_USERNAME,
         }
         values.update(overrides)
         return Settings(**values)
@@ -76,6 +78,7 @@ def client(settings: Settings) -> Iterator[TestClient]:
         yield test_client
 
 
+TEST_USERNAME = "household"
 TEST_PASSWORD = "correct horse battery staple"
 # The TestClient's origin; unsafe requests must send it (CSRF origin check).
 ORIGIN = "http://testserver"
@@ -83,13 +86,14 @@ ORIGIN = "http://testserver"
 
 @pytest.fixture
 def auth_settings(make_settings: SettingsFactory) -> Settings:
-    """Settings with HOUSEHOLD_PASSWORD=TEST_PASSWORD."""
+    """Settings with HOUSEHOLD_USERNAME=TEST_USERNAME and HOUSEHOLD_PASSWORD=TEST_PASSWORD."""
     return make_settings(household_password=TEST_PASSWORD)
 
 
 @contextmanager
 def logged_in(settings: Settings, **client_kwargs: Any) -> Iterator[TestClient]:
-    """A logged-in TestClient for ``settings`` (household_password must be TEST_PASSWORD).
+    """A logged-in TestClient for ``settings`` (household_password must be TEST_PASSWORD; the
+    login name TEST_USERNAME is sent, as make_settings configures it by default).
 
     It sends ``Origin: http://testserver`` unless ``headers`` is given; htmx mutation
     endpoints also need ``headers={"HX-Request": "true"}`` per request.
@@ -97,7 +101,9 @@ def logged_in(settings: Settings, **client_kwargs: Any) -> Iterator[TestClient]:
     client_kwargs.setdefault("headers", {"Origin": ORIGIN})
     with TestClient(create_app(settings), **client_kwargs) as test_client:
         response = test_client.post(
-            "/login", data={"password": TEST_PASSWORD}, follow_redirects=False
+            "/login",
+            data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+            follow_redirects=False,
         )
         assert response.status_code == 303, response.text
         yield test_client

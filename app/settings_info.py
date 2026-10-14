@@ -12,6 +12,7 @@ from app.ai import openrouter_catalog
 from app.ai.model_choice import effective_model, model_selectable, stored_model
 from app.ai.openrouter_catalog import Catalog, ModelInfo
 from app.ai.registry import ai_disabled_reason
+from app.auth.passwords import get_username
 from app.capture.budget import (
     PICKER_LIMIT,
     MonthUsage,
@@ -25,6 +26,9 @@ from app.db.timestamps import parse_utc, utcnow
 
 PHOTO_SIZE_CACHE_SECONDS = 600
 QR_WARNING = "Changing this orphans every printed QR/NFC tag."
+NO_USERNAME_WARNING = (
+    "No login name is set — add HOUSEHOLD_USERNAME to .env (or run `cli set-username`) and restart."
+)
 TIMEOUT_NOTE = (
     "A timed-out call reports no usage. Anthropic timeouts are recorded as $0, although "
     "they may still be billed; OpenRouter timeouts and dropped calls are charged an "
@@ -126,6 +130,8 @@ def build_settings_info(
     disabled = ai_disabled_reason(settings, model)
 
     warnings: list[str] = []
+    if get_username(conn) is None:
+        warnings.append(NO_USERNAME_WARNING)
     if disabled:
         warnings.append(disabled)
     if exhausted:

@@ -49,6 +49,32 @@ def cmd_set_password(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def cmd_set_username(args: argparse.Namespace, settings: Settings) -> int:
+    if args.name is not None:
+        name = args.name
+    elif sys.stdin.isatty():
+        name = input("Household login name: ")
+    else:
+        name = sys.stdin.readline().rstrip("\r\n")
+    try:
+        name = passwords.validate_username(name)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    with closing(connect(settings.db_path)) as conn:
+        migrate(conn)
+        passwords.set_username(conn, name)
+    print(f"Login name set to {name!r}; all sessions were signed out.")
+    if settings.household_username is not None:
+        print(
+            "warning: HOUSEHOLD_USERNAME is set and will replace this login name on the next "
+            "restart.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def _require_db(settings: Settings) -> bool:
     if settings.db_path.exists():
         return True
@@ -122,6 +148,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="set the household password (read from the prompt, or one line of stdin)",
     )
     set_password.set_defaults(handler=cmd_set_password)
+    set_username = commands.add_parser(
+        "set-username",
+        help="set the household login name (--name, the prompt, or one line of stdin)",
+    )
+    set_username.add_argument("--name", help="the login name (otherwise prompted)")
+    set_username.set_defaults(handler=cmd_set_username)
     export = commands.add_parser(
         "export", help="print the JSON export (same as GET /api/export.json)"
     )

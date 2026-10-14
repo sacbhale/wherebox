@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.auth.passwords import validate_username
+
 
 class Settings(BaseSettings):
     # Empty values (e.g. `AI_API_KEY=` in .env) count as unset.
@@ -18,6 +20,7 @@ class Settings(BaseSettings):
     puid: int = 1000
     pgid: int = 1000
 
+    household_username: str | None = None
     household_password: SecretStr | None = None
 
     ai_provider: Literal["anthropic", "openrouter", "fake"] = "anthropic"
@@ -71,6 +74,16 @@ class Settings(BaseSettings):
                 f"and no path, query or credentials (got {value!r})"
             )
         return value
+
+    @field_validator("household_username")
+    @classmethod
+    def _check_household_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return validate_username(value)
+        except ValueError as exc:
+            raise ValueError(f"HOUSEHOLD_USERNAME is invalid: {exc}") from exc
 
     @field_validator("tz")
     @classmethod

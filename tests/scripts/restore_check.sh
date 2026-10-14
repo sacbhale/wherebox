@@ -12,6 +12,7 @@ cd "$(dirname "$0")/../.."
 PROJECT=inventory-restore-check
 BASE=http://127.0.0.1:18000
 ORIGIN=$BASE
+USERNAME=restore
 PASSWORD=restore-test
 
 WORK=$(mktemp -d)
@@ -58,7 +59,8 @@ wait_healthy() {
 login() {
     rm -f "$JAR"
     code=$(curl -sS -o /dev/null -w '%{http_code}' -c "$JAR" -H "Origin: $ORIGIN" \
-        --data-urlencode "password=$PASSWORD" "$BASE/login")
+        --data-urlencode "username=$USERNAME" --data-urlencode "password=$PASSWORD" \
+        "$BASE/login")
     [ "$code" = 303 ] || fail "login returned HTTP $code (expected 303)"
     grep -q inv_session "$JAR" || fail "login did not set the inv_session cookie"
 }
