@@ -114,6 +114,21 @@ def test_seven_photos_are_refused_before_anything_is_saved(
     assert stored_files(auth_settings) == []
 
 
+def test_too_many_form_fields_are_refused_by_the_parser(
+    auth_client, auth_settings, garage, tmp_path
+):
+    """max_fields=MAX_FORM_FIELDS bounds the multipart parser: 21 text fields are a 400."""
+    data = {"location_id": str(garage)} | {f"f{i}": "x" for i in range(20)}
+    (jpeg,) = make_jpegs(tmp_path, 1)
+    files = [("photos", (jpeg.name, jpeg.read_bytes(), "image/jpeg"))]
+    response = auth_client.post("/captures/photo", headers=HX, data=data, files=files)
+    assert response.status_code == 400
+    assert "The upload could not be read." in response.text
+    with open_db(auth_settings) as conn:
+        assert conn.execute("SELECT count(*) FROM captures").fetchone()[0] == 0
+    assert stored_files(auth_settings) == []
+
+
 @pytest.mark.parametrize("url", ["/captures/photo", "/captures/reconcile"])
 def test_pdfs_are_refused_for_photo_and_reconcile(
     auth_client, auth_settings, garage, tmp_path, url

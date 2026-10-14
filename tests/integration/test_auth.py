@@ -11,7 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from starlette.routing import Mount
@@ -38,11 +38,13 @@ def _protected_routes() -> list[tuple[str, str]]:
         public_base_url="http://testserver", data_dir=Path("/nonexistent")
     )
     routes: set[tuple[str, str]] = set()
-    for route in create_app(settings).routes:
-        if isinstance(route, Mount):
+    # FastAPI >= 0.137 keeps included routers as a tree in ``app.routes``;
+    # ``iter_route_contexts`` yields every effective (prefixed) route.
+    for route in iter_route_contexts(create_app(settings).routes):
+        if isinstance(route.original_route, Mount):
             assert is_allowlisted(route.path + "/"), f"unexpected mount {route.path}"
             continue
-        if not isinstance(route, APIRoute) or is_allowlisted(route.path):
+        if not isinstance(route.original_route, APIRoute) or is_allowlisted(route.path):
             continue
         path = re.sub(r"\{[^}]+\}", "1", route.path)
         routes.update((method, path) for method in route.methods - {"HEAD"})
