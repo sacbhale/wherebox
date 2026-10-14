@@ -1,0 +1,116 @@
+# Test, build and publish the Docker image on every push to main.
+#
+# Tags: <YYYY.MM.DD>-<short commit sha> (UTC date, e.g. 2026.10.14-a1b2c3d) and `latest`.
+# Images: linux/amd64 and linux/arm64.
+#
+# One-time setup in GitHub → Settings → Secrets and variables → Actions:
+#   secret   DOCKERHUB_USERNAME  your Docker Hub user name
+#   secret   DOCKERHUB_TOKEN     a Docker Hub access token with Read & Write scope
+#   variable DOCKERHUB_IMAGE     the repository, e.g. yourname/inventory-app
+#
+# Third-party actions are pinned to commit SHAs (the comment shows the release).
+name: Test and publish image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Lint, unit and integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest tests/unit tests/integration -q
+
+  e2e:
+    name: Browser tests (Chromium, WebKit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      - run: uv run playwright install --with-deps chromium webkit
+      - run: uv run pytest tests/e2e -q
+
+  publish:
+    name: Build and push to Docker Hub
+    needs: [test, e2e]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check configuration
+        env:
+          IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          missing=""
+          [ -n "$IMAGE" ] || missing="$missing variable:DOCKERHUB_IMAGE"
+          [ -n "$USERNAME" ] || missing="$missing secret:DOCKERHUB_USERNAME"
+          [ -n "$TOKEN" ] || missing="$missing secret:DOCKERHUB_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing Actions configuration:$missing (see the comment at the top of this workflow)"
+            exit 1
+          fi
+
+      # The same container check as locally: start the image, seed it, copy /data, restore, compare.
+      - name: Restore check (container smoke test)
+        run: bash tests/scripts/restore_check.sh
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ vars.DOCKERHUB_IMAGE }}
+          tags: |
+            type=raw,value={{date 'YYYY.MM.DD' tz='UTC'}}-{{sha}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Published"
+            echo '```'
+            echo "$TAGS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

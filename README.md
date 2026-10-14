@@ -60,6 +60,25 @@ AI_PROVIDER=fake FAKE_AI_SCRIPT=tests/fixtures/fake_script.json \
 uv run uvicorn app.main:create_app --factory --port 8000
 ```
 
+## Published image (Docker Hub)
+
+Every push to `main` runs `.github/workflows/docker-publish.yml`: lint, unit, integration and
+browser tests, the container restore check, then a multi-arch (amd64/arm64) build pushed to Docker
+Hub as `<YYYY.MM.DD>-<short sha>` (UTC date, e.g. `2026.10.14-a1b2c3d`) and `latest`. It can also be
+started by hand from the Actions tab.
+
+One-time setup in GitHub → Settings → Secrets and variables → Actions:
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `DOCKERHUB_USERNAME` | your Docker Hub user name |
+| Secret | `DOCKERHUB_TOKEN` | a Docker Hub access token (Account settings → Personal access tokens, Read & Write) |
+| Variable | `DOCKERHUB_IMAGE` | the repository, e.g. `yourname/inventory-app` |
+
+To run a published image instead of building locally, replace `build: .` in `docker-compose.yml`
+with `image: yourname/inventory-app:2026.10.14-a1b2c3d` (pin a dated tag rather than `latest`), then
+`docker compose pull && docker compose up -d`.
+
 ## Docs
 
 - [docs/operations.md](docs/operations.md): install, file ownership, reverse proxies and
