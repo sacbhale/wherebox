@@ -20,7 +20,7 @@ reverse proxy.
 
 ```sh
 cp .env.example .env     # set PUBLIC_BASE_URL before printing any tags
-docker compose up -d --build
+docker compose up -d     # pulls the published image (add --build to build this source instead)
 docker compose logs app  # the one-time setup token, unless HOUSEHOLD_PASSWORD is set
 ```
 
@@ -75,9 +75,11 @@ One-time setup in GitHub → Settings → Secrets and variables → Actions:
 | Secret | `DOCKERHUB_TOKEN` | a Docker Hub access token (Account settings → Personal access tokens, Read & Write) |
 | Variable | `DOCKERHUB_IMAGE` | the repository, e.g. `yourname/inventory-app` |
 
-To run a published image instead of building locally, replace `build: .` in `docker-compose.yml`
-with `image: yourname/inventory-app:2026.10.14-a1b2c3d` (pin a dated tag rather than `latest`), then
-`docker compose pull && docker compose up -d`.
+`docker-compose.yml` runs the published image (`INVENTORY_IMAGE`, `INVENTORY_TAG` in `.env`,
+default `sacbhale/inventory-app:latest`); a plain `docker compose up -d` pulls it, so it picks up a
+newer image for that tag. Pin a dated tag (`INVENTORY_TAG=2026.10.14-6ed9d1a`) to control updates.
+`docker compose up -d --build` builds this checkout instead; the next plain `up` goes back to the
+published image.
 
 ## Docs
 

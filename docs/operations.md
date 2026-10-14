@@ -14,7 +14,7 @@ app stores lives in one directory, `/data` in the container (`./data` next to
 
 ```sh
 cp .env.example .env        # then edit .env, at least PUBLIC_BASE_URL (see below)
-docker compose up -d --build
+docker compose up -d        # pulls the published image; `--build` builds this checkout instead
 docker compose logs -f app  # shows the one-time setup token when no password is set
 curl -fsS http://127.0.0.1:8000/healthz
 ```

@@ -4,6 +4,7 @@
 services:
   app:
     image: inventory-app:restore-check
+    pull_policy: never # always the locally built source, never a Docker Hub image
     env_file: !reset []
     environment:
       PUBLIC_BASE_URL: http://127.0.0.1:18000
