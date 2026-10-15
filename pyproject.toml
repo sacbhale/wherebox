@@ -1,5 +1,5 @@
 [project]
-name = "inventory-app"
+name = "wherebox"
 version = "0.1.0"
 description = "Self-hosted household inventory with AI capture"
 requires-python = ">=3.12"

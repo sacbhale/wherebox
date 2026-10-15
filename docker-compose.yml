@@ -1,10 +1,12 @@
+name: wherebox
+
 services:
   app:
     # The published Docker Hub image by default: `docker compose up -d` pulls it (pull_policy
     # always: a plain `up` always uses the Docker Hub image and picks up a newer one for the tag).
-    # Pin a dated tag (INVENTORY_TAG=2026.10.14-6ed9d1a) to control updates. To run your own
+    # Pin a dated tag (WHEREBOX_TAG=2026.10.14-0f12bb9) to control updates. To run your own
     # local source instead, build it explicitly: `docker compose up -d --build`.
-    image: ${INVENTORY_IMAGE:-sacbhale/inventory-app}:${INVENTORY_TAG:-latest}
+    image: ${WHEREBOX_IMAGE:-sacbhale/wherebox}:${WHEREBOX_TAG:-latest}
     pull_policy: always
     build: .
     env_file: .env

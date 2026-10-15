@@ -4,12 +4,12 @@
 #
 # Run from the repo root:  bash tests/scripts/restore_check.sh
 # Needs docker (with compose), curl and python3 on the host. Uses its own compose project
-# (inventory-restore-check) on 127.0.0.1:18000, so it does not touch the main stack.
+# (wherebox-restore-check) on 127.0.0.1:18000, so it does not touch the main stack.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-PROJECT=inventory-restore-check
+PROJECT=wherebox-restore-check
 BASE=http://127.0.0.1:18000
 ORIGIN=$BASE
 USERNAME=restore

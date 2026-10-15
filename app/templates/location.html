@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ location.name }} · Inventory{% endblock %}
+{% block title %}{{ location.name }} · {{ app_name }}{% endblock %}
 {% block capture_href %}/l/{{ location.short_code }}/capture{% endblock %}
 {% block content %}
 <nav class="breadcrumb" aria-label="Breadcrumb">

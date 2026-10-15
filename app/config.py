@@ -10,6 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.auth.passwords import validate_username
 
+# The product name shown in page titles, the header and to OpenRouter (one place to rename).
+APP_NAME = "Wherebox"
+
 
 class Settings(BaseSettings):
     # Empty values (e.g. `AI_API_KEY=` in .env) count as unset.

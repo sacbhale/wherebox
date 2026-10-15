@@ -6,7 +6,7 @@
 # One-time setup in GitHub → Settings → Secrets and variables → Actions:
 #   secret   DOCKERHUB_USERNAME  your Docker Hub user name
 #   secret   DOCKERHUB_TOKEN     a Docker Hub access token with Read & Write scope
-#   variable DOCKERHUB_IMAGE     the repository, e.g. yourname/inventory-app
+#   variable DOCKERHUB_IMAGE     the repository, e.g. yourname/wherebox
 #
 # Third-party actions are pinned to commit SHAs (the comment shows the release).
 name: Test and publish image

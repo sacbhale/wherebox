@@ -1,7 +1,8 @@
-# Household inventory
+# Wherebox
 
-A self-hosted inventory for one household. Items live in a nested tree of locations, and
-every location has a permanent short URL (`/l/<code>`) for printed QR codes and NFC tags.
+Wherebox is a self-hosted household inventory: it remembers where everything is. Items live
+in a nested tree of locations, and every location has a permanent short URL (`/l/<code>`)
+for printed QR codes and NFC tags.
 Items can be added by photographing a shelf, a receipt, or by typing or dictating a
 sentence: an AI model extracts the items. Manual entry always works too. It runs as one
 Docker container with SQLite and a photos directory on one volume, behind your HTTPS
@@ -35,7 +36,7 @@ docker compose exec app python -m app.cli set-password
 docker compose exec app python -m app.cli set-username   # the login name (or --name NAME)
 docker compose exec app python -m app.cli backup
 docker compose exec app python -m app.cli check        # PRAGMA integrity_check
-docker compose exec app python -m app.cli export > inventory-export.json
+docker compose exec app python -m app.cli export > wherebox-export.json
 ```
 
 ## Development
@@ -73,11 +74,11 @@ One-time setup in GitHub → Settings → Secrets and variables → Actions:
 |---|---|---|
 | Secret | `DOCKERHUB_USERNAME` | your Docker Hub user name |
 | Secret | `DOCKERHUB_TOKEN` | a Docker Hub access token (Account settings → Personal access tokens, Read & Write) |
-| Variable | `DOCKERHUB_IMAGE` | the repository, e.g. `yourname/inventory-app` |
+| Variable | `DOCKERHUB_IMAGE` | the repository, e.g. `yourname/wherebox` |
 
-`docker-compose.yml` runs the published image (`INVENTORY_IMAGE`, `INVENTORY_TAG` in `.env`,
-default `sacbhale/inventory-app:latest`); a plain `docker compose up -d` pulls it, so it picks up a
-newer image for that tag. Pin a dated tag (`INVENTORY_TAG=2026.10.14-6ed9d1a`) to control updates.
+`docker-compose.yml` runs the published image (`WHEREBOX_IMAGE`, `WHEREBOX_TAG` in `.env`,
+default `sacbhale/wherebox:latest`); a plain `docker compose up -d` pulls it, so it picks up a
+newer image for that tag. Pin a dated tag (`WHEREBOX_TAG=2026.10.14-0f12bb9`) to control updates.
 `docker compose up -d --build` builds this checkout instead; the next plain `up` goes back to the
 published image.
 

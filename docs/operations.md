@@ -1,6 +1,6 @@
 # Operations
 
-How to install, expose, secure, back up and restore the household inventory. Everything the
+How to install, expose, secure, back up and restore Wherebox. Everything the
 app stores lives in one directory, `/data` in the container (`./data` next to
 `docker-compose.yml` by default):
 
@@ -89,7 +89,7 @@ ignored, so it counts as the direct peer IP over plain HTTP.
 On the host, with the app published on `127.0.0.1:8000`:
 
 ```caddyfile
-inventory.example.com {
+wherebox.example.com {
     reverse_proxy 127.0.0.1:8000
 }
 ```
@@ -97,13 +97,13 @@ inventory.example.com {
 As a container on a network shared with the app (`expose: ["8000"]` on the app):
 
 ```caddyfile
-inventory.example.com {
+wherebox.example.com {
     reverse_proxy app:8000
 }
 ```
 
 Caddy sets `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` by default.
-Set `PUBLIC_BASE_URL=https://inventory.example.com`.
+Set `PUBLIC_BASE_URL=https://wherebox.example.com`.
 
 ### Traefik
 
@@ -120,10 +120,10 @@ services:
     networks: [proxy]
     labels:
       traefik.enable: "true"
-      traefik.http.routers.inventory.rule: Host(`inventory.example.com`)
-      traefik.http.routers.inventory.entrypoints: websecure
-      traefik.http.routers.inventory.tls.certresolver: letsencrypt
-      traefik.http.services.inventory.loadbalancer.server.port: "8000"
+      traefik.http.routers.wherebox.rule: Host(`wherebox.example.com`)
+      traefik.http.routers.wherebox.entrypoints: websecure
+      traefik.http.routers.wherebox.tls.certresolver: letsencrypt
+      traefik.http.services.wherebox.loadbalancer.server.port: "8000"
   traefik:
     # ...your Traefik service...
     networks:
@@ -366,7 +366,7 @@ direct Anthropic provider stays available.
   `claude-sonnet-5-5`), AI capture is disabled with a message on Settings and manual entry
   keeps working. The key only ever leaves the server in the `Authorization` header to
   openrouter.ai; it is never shown, logged or sent to the browser. Requests carry the
-  `X-Title: Household Inventory` header and no `HTTP-Referer`, so your hostname is not
+  `X-Title: Wherebox` header and no `HTTP-Referer`, so your hostname is not
   shared.
 - **Choosing a model.** Settings → **AI model** shows the active model with its prices, and
   a search over OpenRouter's model list (fetched by the server, cached for an hour, and kept
@@ -511,7 +511,7 @@ Copy the **whole data directory**, including `photos/` and `backups/`:
 
 ```sh
 docker compose stop            # best: a quiet copy
-cp -a data /path/to/backup/inventory-data-$(date +%F)
+cp -a data /path/to/backup/wherebox-data-$(date +%F)
 docker compose start
 ```
 
@@ -597,7 +597,7 @@ belongs to the other browser's session. What to do:
 
 - Open the scanned URL in the browser where the move was started, or scan from inside that
   browser. The move then applies, with undo. If it expired, start it again.
-- Or set the phone's default browser to the one the household uses for the inventory.
+- Or set the phone's default browser to the one the household uses for Wherebox.
 - Use a normal browser tab rather than an installed home-screen app when you rely on
   scan-to-move.
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Review · Inventory{% endblock %}
+{% block title %}Review · {{ app_name }}{% endblock %}
 {% block content %}
 {# Each action is one hx-post; the empty answer replaces (removes) the row (AC-7). #}
 {% set row_swap = 'hx-target="closest .review-row" hx-swap="outerHTML"' %}

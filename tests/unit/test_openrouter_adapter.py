@@ -78,7 +78,7 @@ def test_tools_strategy_request_shape() -> None:
     request = mock.requests[0]
     assert str(request.url) == "https://openrouter.ai/api/v1/chat/completions"
     assert request.headers["authorization"] == f"Bearer {API_KEY}"
-    assert request.headers["x-title"] == "Household Inventory"
+    assert request.headers["x-title"] == "Wherebox"
     assert "http-referer" not in request.headers  # privacy: no household hostname
     assert "referer" not in request.headers
     body = json.loads(request.content)

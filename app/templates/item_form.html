@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit item" if item_id else "Add item" }} · Inventory{% endblock %}
+{% block title %}{{ "Edit item" if item_id else "Add item" }} · {{ app_name }}{% endblock %}
 {% block content %}
 <h1>{{ "Edit item" if item_id else "Add item" }}</h1>
 {% if errors %}<p class="error" role="alert">Please fix the highlighted fields.</p>{% endif %}

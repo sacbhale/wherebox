@@ -65,13 +65,13 @@ from app.ai.schemas import (
     output_cap,
     strict_json_schema,
 )
+from app.config import APP_NAME
 
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://openrouter.ai/api/v1"
 # Same caps as the Anthropic adapter: photo modes get schemas.output_cap (16,384).
 DEFAULT_MAX_TOKENS = 4096
-APP_TITLE = "Household Inventory"
 # 408 request timeout and 429 rate limit are worth retrying; so is any 5xx.
 _TRANSIENT_4XX = frozenset({408, 429})
 INSUFFICIENT_CREDITS = "OpenRouter: insufficient credits"
@@ -398,7 +398,7 @@ class OpenRouterProvider:
                 "POST",
                 self._url,
                 json=self._body(req, strategy, info, dropped),
-                headers={"Authorization": f"Bearer {self._api_key}", "X-Title": APP_TITLE},
+                headers={"Authorization": f"Bearer {self._api_key}", "X-Title": APP_NAME},
                 timeout=timeout,
             ) as response:
                 status = response.status_code

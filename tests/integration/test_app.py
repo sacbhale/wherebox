@@ -53,3 +53,19 @@ def test_create_app_fails_fast_on_bad_public_base_url(monkeypatch):
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://inv.example.com/sub")
     with pytest.raises(ValidationError, match="no path"):
         create_app()
+
+
+def test_brand_comes_from_app_name(auth_client, monkeypatch):
+    # Page titles, the header brand and the home heading all come from APP_NAME, so a rename is
+    # one line. Swap the template global and check every place follows it.
+    from app import config
+    from app.templating import templates
+
+    assert config.APP_NAME == "Wherebox"
+    monkeypatch.setitem(templates.env.globals, "app_name", "Testbox")
+    home = auth_client.get("/").text
+    assert "<title>Testbox</title>" in home
+    assert '<a class="brand" href="/">Testbox</a>' in home
+    assert "<h1>Testbox</h1>" in home
+    assert "<title>Search · Testbox</title>" in auth_client.get("/search").text
+    assert "Inventory" not in home

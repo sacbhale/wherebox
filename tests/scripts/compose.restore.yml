@@ -1,9 +1,9 @@
 # Override for tests/scripts/restore_check.sh (AC-33); not for production use.
-# Used as: docker compose -p inventory-restore-check -f docker-compose.yml -f <this file> ...
+# Used as: docker compose -p wherebox-restore-check -f docker-compose.yml -f <this file> ...
 # restore_check.sh sets RESTORE_DATA_DIR (a temp dir) and RESTORE_UID / RESTORE_GID.
 services:
   app:
-    image: inventory-app:restore-check
+    image: wherebox:restore-check
     pull_policy: never # always the locally built source, never a Docker Hub image
     env_file: !reset []
     environment:

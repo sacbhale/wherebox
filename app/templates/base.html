@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>{% block title %}Inventory{% endblock %}</title>
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/app.js" defer></script>
@@ -12,7 +12,7 @@
 <body{% if request.state.session is defined %} class="with-bar"{% endif %}>
   {% if request.state.session is defined %}
   <header class="topbar">
-    <a class="brand" href="/">Inventory</a>
+    <a class="brand" href="/">{{ app_name }}</a>
     <nav>
       <a href="/search">Search</a>
       <a href="/items/new">Add item</a>

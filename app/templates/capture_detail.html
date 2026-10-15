@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Capture #{{ group.root_id }} · Inventory{% endblock %}
+{% block title %}Capture #{{ group.root_id }} · {{ app_name }}{% endblock %}
 {% block content %}
 {% from "partials/group_parts.html" import group_meta, group_section, extend_section %}
 {% set labels = {"photo": "Photo capture", "receipt": "Receipt", "text": "Text capture", "reconcile": "Reconcile"} %}

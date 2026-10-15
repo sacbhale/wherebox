@@ -130,7 +130,7 @@ Each call writes its ledger row with `insert_ai_call(..., capture_id=None, compa
 
 ## OpenRouter adapter
 
-`app/ai/openrouter_adapter.py` calls `POST https://openrouter.ai/api/v1/chat/completions` with plain `httpx` (no SDK, no retries). Headers: `Authorization: Bearer <OPENROUTER_API_KEY>` and `X-Title: Household Inventory` (no `HTTP-Referer`). The key never appears in messages, exceptions or logs.
+`app/ai/openrouter_adapter.py` calls `POST https://openrouter.ai/api/v1/chat/completions` with plain `httpx` (no SDK, no retries). Headers: `Authorization: Bearer <OPENROUTER_API_KEY>` and `X-Title: Wherebox` (no `HTTP-Referer`). The key never appears in messages, exceptions or logs.
 
 The request carries the same prompts (`prompts.system_prompt`, `prompts.user_text`), then for each image a text part `Image {i}:` followed by `{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,…"}}`, and `max_tokens` = `output_cap(mode, 4096)` (16,384 for photo modes; the Anthropic adapter uses the same caps). The Anthropic adapter sends each `Image {i}:` text block before its image block, and the user text last. The **output strategy** comes from the model's catalog entry:
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Locations added · Inventory{% endblock %}
+{% block title %}Locations added · {{ app_name }}{% endblock %}
 {% block content %}
 <h1>Created {{ created|length }} location{{ "s" if created|length != 1 }}{% if parent %} in {{ parent.name }}{% else %} at the top level{% endif %}</h1>
 {% if created %}

@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 
 from app.capture import gallery, groups
+from app.config import APP_NAME
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
@@ -22,6 +23,7 @@ def usd(value: float | None) -> str:
 
 
 templates.env.filters["usd"] = usd
+templates.env.globals["app_name"] = APP_NAME
 
 # The annotated gallery's view model (app/capture/gallery.py), for partials/gallery.html.
 templates.env.globals["group_frames"] = gallery.group_frames

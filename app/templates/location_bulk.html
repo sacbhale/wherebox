@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Add several locations · Inventory{% endblock %}
+{% block title %}Add several locations · {{ app_name }}{% endblock %}
 {% block content %}
 <p class="links">{% if parent %}<a href="/l/{{ parent.short_code }}">‹ Back to {{ parent.name }}</a>{% else %}<a href="/">‹ Back home</a>{% endif %}</p>
 <h1>{% if parent %}Add several locations in {{ parent.name }}{% else %}Add several locations{% endif %}</h1>
