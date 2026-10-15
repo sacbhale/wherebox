@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% if test %}Test sheet{% else %}Labels{% endif %} · {{ app_name }}</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="{{ static_url('app.css') }}">
   {# Only this page prints edge to edge: the sheets carry the sticker sheet's own margins. #}
   <style>@page { size: A4; margin: 0; }</style>
-  <script src="/static/app.js" defer></script>
+  <script src="{{ static_url('app.js') }}" defer></script>
 </head>
 <body class="labels-page">
 {% set query = {"ids": ids, "dx": dx, "dy": dy} %}

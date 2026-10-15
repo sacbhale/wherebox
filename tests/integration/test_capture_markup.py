@@ -43,7 +43,9 @@ def test_text_forms_include_voice_input(auth_client, shelf):
         # Hidden until voice.js finds SpeechRecognition; a plain button, never a submit.
         assert " hidden" in mic.group(0) and 'type="button"' in mic.group(0), name
         assert 'data-voice-target="#capture-text-input"' in mic.group(0), name
-        assert '<script src="/static/voice.js" defer></script>' in html, name
+        assert re.search(
+            r'<script src="/static/voice\.js\?v=[0-9a-f]{10}" defer></script>', html
+        ), name
 
 
 def test_voice_script_posts_text_only(auth_client):

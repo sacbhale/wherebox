@@ -69,3 +69,47 @@ def test_brand_comes_from_app_name(auth_client, monkeypatch):
     assert "<h1>Testbox</h1>" in home
     assert "<title>Search · Testbox</title>" in auth_client.get("/search").text
     assert "Inventory" not in home
+
+
+def test_pages_link_versioned_assets(auth_client):
+    # Phones kept a stale app.css after a deploy; every asset link now carries its content hash.
+    import re
+
+    html = auth_client.get("/").text
+    for path in ("app.css", "app.js", "vendor/htmx.min.js"):
+        assert re.search(rf'"/static/{re.escape(path)}\?v=[0-9a-f]{{10}}"', html), path
+    assert not re.search(r'"/static/[^"?]+"', html), "an unversioned /static link is left"
+
+
+def test_asset_version_follows_the_content(tmp_path, monkeypatch):
+    from app import static_assets
+
+    (tmp_path / "a.css").write_text("body{}")
+    monkeypatch.setattr(static_assets, "STATIC_DIR", tmp_path)
+    static_assets._version.cache_clear()
+    first = static_assets.static_url("a.css")
+    (tmp_path / "a.css").write_text("body{color:red}")
+    static_assets._version.cache_clear()
+    second = static_assets.static_url("a.css")
+    static_assets._version.cache_clear()
+    assert first.startswith("/static/a.css?v=") and first != second
+
+
+def test_static_cache_headers(client):
+    from app.static_assets import static_url
+
+    versioned = client.get(static_url("app.css"))
+    assert versioned.status_code == 200
+    assert versioned.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert client.get("/static/app.css").headers["cache-control"] == "no-cache"
+
+
+def test_only_a_real_version_param_is_cached_and_304s_keep_the_header(client):
+    from app.static_assets import static_url
+
+    assert client.get("/static/app.css?nov=1").headers["cache-control"] == "no-cache"
+    url = static_url("app.css")
+    etag = client.get(url).headers["etag"]
+    not_modified = client.get(url, headers={"If-None-Match": etag})
+    assert not_modified.status_code == 304
+    assert not_modified.headers["cache-control"] == "public, max-age=31536000, immutable"

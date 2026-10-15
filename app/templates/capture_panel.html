@@ -63,7 +63,7 @@
     <span id="voice-status" class="muted" aria-live="polite"></span>
     <button type="submit" {% if blocked %}disabled{% endif %}>Add from text</button>
   </form>
-  <script src="/static/voice.js" defer></script>
+  <script src="{{ static_url('voice.js') }}" defer></script>
 
   {# Not a live region itself: each status's summary is (role="status"), its gallery not. #}
   <div id="capture-results">

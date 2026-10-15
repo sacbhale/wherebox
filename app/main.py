@@ -2,10 +2,8 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, closing
-from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.staticfiles import StaticFiles
 
 from app.ai.registry import make_provider_for
 from app.api.routes import router as api_router
@@ -23,8 +21,7 @@ from app.db.timestamps import utcnow
 from app.inventory.review_routes import router as review_router
 from app.inventory.routes import router as inventory_router
 from app.settings_routes import router as settings_router
-
-STATIC_DIR = Path(__file__).parent / "static"
+from app.static_assets import STATIC_DIR, VersionedStaticFiles
 
 health = APIRouter()
 
@@ -84,7 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.setup_token = None
     app.state.worker = None
     app.middleware("http")(auth_middleware)
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", VersionedStaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(health)
     app.include_router(auth_router)
     app.include_router(api_router)
