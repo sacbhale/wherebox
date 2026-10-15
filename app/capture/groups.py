@@ -160,7 +160,8 @@ def group(conn: sqlite3.Connection, capture_id: int) -> Group | None:
     """The group of any of its captures (root or extension), or None when the capture does
     not exist. Items are those created by the group's captures plus any item that has a box
     on one of its photos (e.g. an existing item matched by an extension), moved and used-up
-    ones included with their state."""
+    ones included with their state; items the user deleted (wrong detections,
+    ``deleted_reason = 'deleted'``) are left out."""
     capture = conn.execute("SELECT * FROM captures WHERE id = ?", (capture_id,)).fetchone()
     if capture is None:
         return None
@@ -206,7 +207,7 @@ def group(conn: sqlite3.Connection, capture_id: int) -> Group | None:
             "SELECT i.id, i.name, i.quantity, i.needs_review, i.capture_id, i.location_id,"
             " i.deleted_at, l.name AS location_name, l.short_code AS location_code"
             " FROM items i JOIN locations l ON l.id = i.location_id"
-            f" WHERE i.id IN ({id_marks})",
+            f" WHERE i.id IN ({id_marks}) AND i.deleted_reason IS NOT 'deleted'",
             tuple(item_ids),
         ).fetchall()
 
@@ -253,12 +254,12 @@ def extension_outcome(conn: sqlite3.Connection, capture_id: int) -> tuple[int, i
     """(new, already known) for a finished extension — "Added X new, Y already known": the
     items it created, and the live items it matched (``captures.known_count``, stored by its
     apply; boxed or not, gone items excluded). Extensions applied before that column count
-    the other items that got boxes from them."""
+    the other items that got (model) boxes from them."""
     row = conn.execute(
         "SELECT (SELECT count(*) FROM items WHERE capture_id = ?),"
         " coalesce((SELECT known_count FROM captures WHERE id = ?),"
         " (SELECT count(DISTINCT b.item_id) FROM item_boxes b JOIN items i ON i.id = b.item_id"
-        "  WHERE b.capture_id = ? AND i.capture_id IS NOT ?))",
+        "  WHERE b.capture_id = ? AND b.source = 'model' AND i.capture_id IS NOT ?))",
         (capture_id, capture_id, capture_id, capture_id),
     ).fetchone()
     return row[0], row[1]

@@ -83,6 +83,15 @@ class Usage(BaseModel):
     cost_usd: float | None = Field(default=None, ge=0)
 
 
+def clean_overview_image(value: Any) -> int | None:
+    """The photo modes' ``overview_image`` (the index of the image that shows the most of
+    the place): a non-bool int >= 0, else None. Never raises; the index is checked against
+    the number of images sent at apply time."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
 class ToolOutput(BaseModel):
     """What the model returns through the forced tool call (validated by adapters)."""
 
@@ -90,12 +99,24 @@ class ToolOutput(BaseModel):
 
     items: list[ExtractedItem]
     receipt: ReceiptMeta | None = None
+    overview_image: Any = None
+
+    @field_validator("overview_image", mode="before")
+    @classmethod
+    def _clean_overview(cls, value: Any) -> int | None:
+        return clean_overview_image(value)
 
 
 class ExtractResult(BaseModel):
     items: list[ExtractedItem]
     receipt: ReceiptMeta | None = None
+    overview_image: Any = None
     usage: Usage
+
+    @field_validator("overview_image", mode="before")
+    @classmethod
+    def _clean_overview(cls, value: Any) -> int | None:
+        return clean_overview_image(value)
 
 
 # ---------------------------------------------------------------- boxes
@@ -235,6 +256,13 @@ TOOL_INPUT_SCHEMA: dict[str, Any] = {
         "receipt": {
             "type": ["object", "null"],
             "properties": {"merchant": _NULLABLE_STRING, "purchase_date": _NULLABLE_DATE},
+        },
+        "overview_image": {
+            "type": ["integer", "null"],
+            "description": (
+                "The 0-based index of the image that shows the most of the place (the widest, "
+                "most zoomed-out view). Null for receipts and text."
+            ),
         },
     },
     "required": ["items"],

@@ -71,7 +71,7 @@ def review_keep(conn: Conn, item_id: int) -> Response:
 
 @router.post("/review/items/{item_id}/delete", dependencies=HTMX)
 def review_delete(conn: Conn, item_id: int) -> Response:
-    return _require(items.use_up(conn, item_id), "item not found")
+    return _require(items.delete_item(conn, item_id), "item not found")
 
 
 @router.post("/review/proposals/{proposal_id}/confirm-missing", dependencies=HTMX)

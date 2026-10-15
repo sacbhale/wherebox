@@ -63,7 +63,7 @@
 </div>
 {% if view == "group" and group and oob is defined and oob %}
 {% if capture.status == "done" %}
-{{ group_section(group, oob=True) }}
+{{ group_section(group, oob=True, pin=pin) }}
 {{ group_meta(group, oob=True) }}
 {% if capture.id == group.root_id %}
 {% if capture.type == "photo" %}{{ extend_section(group, none, oob=True) }}{% endif %}

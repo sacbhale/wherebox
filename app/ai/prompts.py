@@ -21,7 +21,9 @@ For every item, set boxes to where it is visible: one entry per box, {"image": N
 [ymin, xmin, ymax, xmax]}, where N is the 0-based image index and the four numbers are
 integers from 0 to 1000 relative to that image (0,0 = top-left corner; y is measured down the
 height, x across the width). Give a box in every image the item appears in, at most 4 boxes
-per item per image (e.g. for separate identical objects). Set boxes to null when unsure."""
+per item per image (e.g. for separate identical objects). Set boxes to null when unsure.
+Set overview_image to the index N of the image that shows the most of the place (the widest,
+most zoomed-out view), or null when unsure."""
 
 _MODE_RULES: dict[Mode, str] = {
     "shelf": """The images show a shelf, drawer, box or room. List every distinct item you can
@@ -60,7 +62,7 @@ def system_prompt(mode: Mode) -> str:
     prompt = f"{_COMMON}\n\n{_MODE_RULES[mode]}"
     if mode in BOX_MODES:
         return f"{prompt}\n\n{_VIEWS_AND_BOXES}"
-    return f"{prompt}\nSet boxes to null."
+    return f"{prompt}\nSet boxes to null. Set overview_image to null."
 
 
 def image_label(index: int) -> str:

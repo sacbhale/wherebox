@@ -3,11 +3,12 @@
 {% from "partials/photo_tray.html" import tray %}
 {% from "partials/gallery.html" import group_gallery %}
 
-{# The group's annotated gallery. ``highlight``: an item id to start highlighted. #}
-{% macro group_section(group, highlight=None, oob=False) %}
+{# The group's annotated gallery. ``highlight``: an item id to start highlighted;
+   ``pin`` ({url, pinned photo id}): offer "Use as location photo" on each photo (see capture routes). #}
+{% macro group_section(group, highlight=None, oob=False, pin=None) %}
 <section class="group-photos" id="capture-{{ group.root_id }}-group"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if group.photos %}<p class="muted gallery-hint">Tap an item to see its box on the photos; tap a box to find its item. Swipe sideways for more photos.</p>{% endif %}
-  {{ group_gallery("capture-" ~ group.root_id ~ "-gallery", group, highlight) }}
+  {{ group_gallery("capture-" ~ group.root_id ~ "-gallery", group, highlight, pin) }}
 </section>
 {% endmacro %}
 

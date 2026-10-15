@@ -5,9 +5,11 @@ Anthropic and OpenRouter adapters answer from recorded responses over httpx Mock
 network). Token counts must match; OpenRouter also reports ``cost_usd``.
 """
 
+import json
 from collections.abc import Callable
 from typing import Any
 
+import httpx2
 import pytest
 
 from app.ai.fake import FakeProvider, FakeStep
@@ -189,3 +191,29 @@ def test_strict_json_schema() -> None:
     assert "additionalProperties" not in TOOL_INPUT_SCHEMA
     strict["properties"].clear()
     assert strict_json_schema()["properties"]
+
+
+def _with_overview(name: str, overview: object) -> AIProvider:
+    """A provider whose success answer carries ``overview_image`` = ``overview``."""
+    if name == "fake":
+        tool_input = SUCCESS["content"][0]["input"] | {"overview_image": overview}
+        return FakeProvider([ExtractResult.model_validate(tool_input | {"usage": {}})])
+    if name == "anthropic":
+        body = recorded("success")
+        body["content"][0]["input"]["overview_image"] = overview
+        return build_mock_anthropic(lambda _request: httpx2.Response(200, json=body)).provider
+    body = openrouter_mock.recorded("tools_success")
+    call = body["choices"][0]["message"]["tool_calls"][0]["function"]
+    call["arguments"] = json.dumps(json.loads(call["arguments"]) | {"overview_image": overview})
+    reply = openrouter_mock.reply_body(200, body)
+    return openrouter_mock.build_mock_openrouter(reply, openrouter_mock.model_info()).provider
+
+
+@pytest.mark.parametrize("name", ["fake", "anthropic", "openrouter"])
+@pytest.mark.parametrize(("overview", "kept"), [(1, 1), (0, 0), ("1", None), (-2, None)])
+def test_overview_image_passes_through_and_never_fails(
+    name: str, overview: object, kept: int | None
+) -> None:
+    result = _with_overview(name, overview).extract(_request())
+    assert result.overview_image == kept
+    assert [i.name for i in result.items] == ["Pasta", "Duct tape"]

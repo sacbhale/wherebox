@@ -352,6 +352,37 @@ The household shares **one login**: a login name and a password (no per-person a
   above the photos switch models; the numbers match that model's item lines, missed items
   have none). Boxes are shown, not scored.
 
+#### Location photo, item thumbnails and fixing outlines
+
+- **Location photo.** A location's page opens with the picture of its contents: during a
+  photo, reconcile or "another angle" capture the model also names the photo that shows the
+  most of the place (the widest view; if it does not, the photo with the most boxes, then the
+  first). The page shows that photo of the location's **latest finished photo or reconcile
+  capture**, with the outlines of the items directly in the location; tap an outline to jump
+  to (and flash) its row. **All photos** opens that capture. To choose a different photo, open
+  a capture of the location and tap **Use as location photo** under a photo; the location
+  then keeps that photo until you tap **Pick automatically** on its page. The Inbox has no
+  location photo, and captures made before this feature use their photo with the most
+  outlines.
+- **Thumbnails.** Item rows (location page, search, home search) show a small crop of the
+  item when it has an outline; tap it to open the **item photo view**: the big photo with the
+  item highlighted and, when several photos show it, a strip to switch between them.
+- **Fix outline.** In the item photo view, **Fix outline**, then drag a rectangle around the
+  item on the photo (finger or mouse; the page does not scroll while you draw) and tap
+  **Save** (Cancel or Esc to stop). The new outline replaces the item's outline on that photo
+  and becomes its thumbnail. A later "another angle" or reconcile never replaces an outline
+  you drew. Outlines cannot be removed, only redrawn.
+- **Rename in the list.** Tap an item's name to edit it in place: Enter saves, Esc or Cancel
+  keeps the old name. The full edit form is still under **⋯ → Edit**.
+- **Delete.** **⋯ → Delete → Confirm delete** removes an item that was detected by mistake
+  (the row shows "Deleted: … · Undo"). It is a soft delete like **Used up** (photos and
+  outlines are kept, Undo restores it), but a deleted item is left out of capture galleries,
+  location photos and comparison prefills, and "another angle" still tells the model not to
+  add it again. The review queue's **Delete** does the same. The export marks it with
+  `deleted_reason: "deleted"` (`"used_up"` for used-up items).
+- **Tag section.** The location page's QR code, permanent link, downloads and label links
+  are under **Tag: QR code, link and labels**, closed until you tap it.
+
 ### Using OpenRouter
 
 [OpenRouter](https://openrouter.ai) gives one key for hundreds of models from many vendors,

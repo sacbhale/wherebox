@@ -84,7 +84,8 @@ def confirm_missing(conn: sqlite3.Connection, proposal_id: int) -> bool:
         if proposal is None:
             return False
         conn.execute(
-            f"UPDATE items SET deleted_at = {NOW}, updated_at = {NOW} WHERE id = ?",
+            f"UPDATE items SET deleted_at = {NOW}, deleted_reason = 'used_up',"
+            f" updated_at = {NOW} WHERE id = ?",
             (proposal["item_id"],),
         )
         search.remove_items(conn, [proposal["item_id"]])

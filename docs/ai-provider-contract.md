@@ -42,6 +42,7 @@ class AIProvider(Protocol):
   - `location_hint`, `price_cents`, `purchase_date` (ISO date) and `matched_existing_id`, each of which may be None.
   - `boxes` (None or a list; see **Boxes**).
 - `receipt: ReceiptMeta(merchant, purchase_date) | None`
+- `overview_image: int | None`: photo modes, the index of the image that shows the most of the place (see **Overview image**).
 - `usage: Usage(input_tokens, output_tokens, cost_usd=None)`. `cost_usd` is what the provider charged for the call in USD, when it reports it (OpenRouter does; Anthropic does not).
 
 The model answers through one forced tool call named `record_items`. Its input schema is `schemas.TOOL_INPUT_SCHEMA`, which is written inline with no `$ref`, and adapters validate the tool input with `schemas.ToolOutput`.
@@ -63,6 +64,10 @@ Both adapters put a text part `Image {i}:` (`prompts.image_label(i)`) right befo
 `ExtractedItem.boxes`: `[{"image": i, "box_2d": [ymin, xmin, ymax, xmax]}]`, integers 0-1000 relative to image `i` (0,0 = top-left; Gemini's native convention), at most 4 boxes per item per image. Boxes are best effort and **never fail a call or a capture**: a `mode="before"` validator (`schemas.clean_boxes`) keeps only valid entries and never raises — wrong shapes, strings, bools, NaN/inf, 3- or 5-number boxes, negative indexes are dropped; coordinates are clamped to 0-1000 and rounded; zero or negative areas are dropped; a 5th box in the same image is dropped; a non-list value becomes None. `schemas.boxes_for_images(item, n_images)` also drops indexes ≥ the number of images sent and converts to fractions (`Fractions(image, x0, y0, x1, y1)`, 0..1). Capture apply and comparisons use the same functions. The tool schema has `boxes` (nullable array); `strict_json_schema()` also drops `minItems`/`maxItems`.
 
 Geometry: the worker writes an upright display JPEG for every photo (EXIF-transposed, long edge 2000) and prepares the AI image from it, both aspect-preserving, so 0-1000 values map 1:1 onto the display JPEG (`photos.width/height` = its size). Receipts and text never store boxes.
+
+### Overview image
+
+The tool output has an optional top-level `overview_image` (`{"type": ["integer", "null"]}` in `TOOL_INPUT_SCHEMA`; nullable, so the strict schema can require it): the 0-based index of the image that shows the most of the place (the widest, most zoomed-out view). The photo prompts ask for it in `_VIEWS_AND_BOXES`; receipt and text prompts ask for null. Like boxes it **never fails a call or a capture**: a `mode="before"` validator on `ToolOutput` and `ExtractResult` (`schemas.clean_overview_image`) keeps a non-bool int ≥ 0 and turns anything else (string, bool, negative, float, object) into None. Both adapters pass it through (OpenRouter: the first non-null across the merged `record_items` calls). At apply time (`boxes.overview_photo`) an index ≥ the number of images sent is ignored too; without a valid one, the call photo with the most item boxes, then the first photo, is the capture's `captures.overview_photo_id` (shelf, reconcile and extend apply). Comparisons ignore it.
 
 ## Errors
 
@@ -187,6 +192,7 @@ The script is a JSON object. Each `extract()` call records its request on `provi
                  "purchase_date": "2026-09-14", "matched_existing_id": null,
                  "boxes": [{"image": 0, "box_2d": [120, 40, 480, 300]}]}],
       "receipt": {"merchant": "Corner Grocery", "purchase_date": "2026-09-14"},
+      "overview_image": null,
       "usage": {"input_tokens": 1200, "output_tokens": 150}
     }},
     {"delay_s": 0.5, "result": {"items": []}},
@@ -209,7 +215,7 @@ Top-level keys:
 
 A step is exactly one of these:
 
-- `{"result": ExtractResult}`. `usage` defaults to 0/0 when omitted. Items may carry `boxes`; invalid entries are dropped exactly as for a real model.
+- `{"result": ExtractResult}`. `usage` defaults to 0/0 when omitted. Items may carry `boxes`; invalid entries are dropped exactly as for a real model. The result may carry `overview_image`, cleaned the same way (an invalid value becomes null).
 - `{"error": "transient" | "permanent", "message"?, "usage"?}`. `usage` may be null or omitted. A transient step may add `retry_after_s` (`ProviderTransientError.retry_after`).
 - `{"error": "rate_limited", "message"?, "usage"?, "retry_after_s"?}` raises `ProviderRateLimited` (a 429); `message` defaults to "OpenRouter HTTP 429: Provider returned error".
 - `{"error": "invalid_output", "message"?, "usage"?, "raw"?}`. `usage` defaults to 0/0.

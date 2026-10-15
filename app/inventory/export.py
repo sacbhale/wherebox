@@ -19,7 +19,7 @@ ITEMS_SQL = """
 SELECT i.id, i.name, i.quantity, c.name AS category, i.kind, i.location_id,
        l.short_code AS location_code, i.expiry_date, i.purchase_date, i.price_cents, i.notes,
        i.photo_id, i.capture_id, i.confidence, i.needs_review, i.last_seen_at, i.deleted_at,
-       i.created_at, i.updated_at
+       i.deleted_reason, i.created_at, i.updated_at
 FROM items i
 JOIN locations l ON l.id = i.location_id
 LEFT JOIN categories c ON c.id = i.category_id

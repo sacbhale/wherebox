@@ -491,6 +491,160 @@
     } catch (e) { /* no storage: no remembered offset */ }
   }
 
+  // ---------------------------------------------------------------- inline rename
+  // partials/item_row.html: tapping the name loads the row with a text input (hx-get); the
+  // input arrives selected, Enter saves (the form's hx-post), Esc cancels (re-fetches the row).
+  document.addEventListener("htmx:afterSettle", function () {
+    var input = document.querySelector("[data-rename-input]");
+    if (input) selectText(input);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape" || !event.target.matches("[data-rename-input]")) return;
+    var cancel = event.target.closest("[data-rename]").querySelector("[data-rename-cancel]");
+    if (cancel) cancel.click();
+  });
+
+  // ---------------------------------------------------------------- location photo
+  // Tapping an outline on the location's photo scrolls to its item row and flashes it.
+  document.addEventListener("click", function (event) {
+    var box = event.target.closest(".box[data-overview-key]");
+    if (!box) return;
+    var row = document.getElementById("item-" + box.getAttribute("data-overview-key"));
+    if (!row) return;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.remove("flash");
+    void row.offsetWidth;  // restart the animation on a second tap
+    row.classList.add("flash");
+  });
+
+  // ---------------------------------------------------------------- Fix outline
+  // [data-draw] (item_photo.html): "Fix outline" switches to drawing mode, where a pointer
+  // drag (mouse or touch, captured) on the photo draws a rectangle; fractions of the photo
+  // fill the form, and Save is enabled once each side is at least data-min.
+
+  // The saved outline's page URL carries ?saved=1 (it shows the message); drop it so a reload
+  // or a shared link does not repeat the message.
+  try {
+    var here = new URL(window.location.href);
+    if (here.searchParams.has("saved") && document.querySelector("[data-draw]")) {
+      here.searchParams.delete("saved");
+      history.replaceState(null, "", here.pathname + here.search + here.hash);
+    }
+  } catch (e) { /* no URL or history API: leave it */ }
+
+  function clamp(value) { return Math.min(Math.max(value, 0), 1); }
+
+  function drawParts(root) {
+    return {
+      surface: root.querySelector(".gallery-image"),
+      form: root.querySelector("[data-draw-form]"),
+      idle: root.querySelector("[data-draw-idle]"),
+      save: root.querySelector("[data-draw-save]"),
+      status: root.querySelector("[data-draw-status]")
+    };
+  }
+
+  function clearRect(root) {
+    var parts = drawParts(root);
+    var rect = parts.surface.querySelector(".draw-rect");
+    if (rect) rect.remove();
+    parts.save.disabled = true;
+    root._drawPointer = null;
+  }
+
+  function setDrawing(root, on) {
+    var parts = drawParts(root);
+    clearRect(root);
+    root.classList.toggle("is-drawing", on);
+    parts.form.hidden = !on;
+    parts.idle.hidden = on;
+    parts.status.textContent = on ? "Drag on the photo to draw the new outline." : "";
+  }
+
+  function drawPoint(surface, event) {
+    var bounds = surface.getBoundingClientRect();
+    return {
+      x: clamp((event.clientX - bounds.left) / bounds.width),
+      y: clamp((event.clientY - bounds.top) / bounds.height)
+    };
+  }
+
+  function showRect(root, a, b) {
+    var surface = drawParts(root).surface;
+    var rect = surface.querySelector(".draw-rect");
+    if (!rect) {
+      rect = document.createElement("span");
+      rect.className = "draw-rect";
+      rect.setAttribute("aria-hidden", "true");
+      surface.appendChild(rect);
+    }
+    var box = { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) };
+    rect.style.left = box.x0 * 100 + "%";
+    rect.style.top = box.y0 * 100 + "%";
+    rect.style.width = (box.x1 - box.x0) * 100 + "%";
+    rect.style.height = (box.y1 - box.y0) * 100 + "%";
+    return box;
+  }
+
+  document.addEventListener("click", function (event) {
+    var root = event.target.closest("[data-draw]");
+    if (!root) return;
+    if (event.target.closest("[data-draw-start]")) setDrawing(root, true);
+    else if (event.target.closest("[data-draw-cancel]")) setDrawing(root, false);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    var root = document.querySelector("[data-draw].is-drawing");
+    if (root) setDrawing(root, false);
+  });
+
+  document.addEventListener("pointerdown", function (event) {
+    var surface = event.target.closest && event.target.closest("[data-draw].is-drawing .gallery-image");
+    if (!surface || event.button !== 0 || !event.isPrimary) return;
+    var root = surface.closest("[data-draw]");
+    event.preventDefault();
+    try { surface.setPointerCapture(event.pointerId); } catch (e) { /* synthetic pointer */ }
+    root._drawPointer = event.pointerId;
+    root._drawStart = drawPoint(surface, event);
+    drawParts(root).save.disabled = true;
+    showRect(root, root._drawStart, root._drawStart);
+  });
+
+  function drawRoot(event) {
+    var root = event.target.closest && event.target.closest("[data-draw].is-drawing");
+    return root && root._drawPointer === event.pointerId ? root : null;
+  }
+
+  document.addEventListener("pointermove", function (event) {
+    var root = drawRoot(event);
+    if (root) showRect(root, root._drawStart, drawPoint(drawParts(root).surface, event));
+  });
+
+  document.addEventListener("pointerup", function (event) {
+    var root = drawRoot(event);
+    if (!root) return;
+    var parts = drawParts(root);
+    var box = showRect(root, root._drawStart, drawPoint(parts.surface, event));
+    root._drawPointer = null;
+    var min = parseFloat(root.getAttribute("data-min")) || 0.02;
+    var ok = box.x1 - box.x0 >= min && box.y1 - box.y0 >= min;
+    ["x0", "y0", "x1", "y1"].forEach(function (key) {
+      parts.form.querySelector("[data-draw-" + key + "]").value = ok ? box[key].toFixed(6) : "";
+    });
+    parts.save.disabled = !ok;
+    parts.status.textContent = ok ? "Outline drawn. Tap Save to keep it, or drag again."
+      : "That outline is too small; drag a bigger one.";
+  });
+
+  document.addEventListener("pointercancel", function (event) {
+    var root = drawRoot(event);
+    if (!root) return;
+    clearRect(root);
+    drawParts(root).status.textContent = "Drawing was interrupted; drag again.";
+  });
+
   // Move focus into a freshly opened sheet (keyboard and screen-reader users).
   document.addEventListener("htmx:afterSwap", function (event) {
     if (!event.detail.target || event.detail.target.id !== "sheet") return;

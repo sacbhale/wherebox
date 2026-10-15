@@ -9,6 +9,14 @@
   <button type="button" id="sheet-used-up" class="danger" data-sheet-action
           hx-post="/items/{{ item.id }}/used-up"
           hx-target="#item-{{ item.id }}" hx-swap="outerHTML">Used up</button>
+  {# Delete asks first (Delete, then Confirm delete); only the confirm closes the sheet. #}
+  <details class="sheet-delete" id="sheet-delete">
+    <summary class="danger" id="sheet-delete-ask">Delete</summary>
+    <p>Delete {{ item.name }}? Use this for wrong detections.</p>
+    <button type="button" id="sheet-delete-confirm" class="danger" data-sheet-action
+            hx-post="/items/{{ item.id }}/delete"
+            hx-target="#item-{{ item.id }}" hx-swap="outerHTML">Confirm delete</button>
+  </details>
 
   <h3>Move to</h3>
   <ul class="move-targets" id="move-targets">

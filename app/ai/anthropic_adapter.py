@@ -128,4 +128,9 @@ class AnthropicProvider:
             raise ProviderInvalidOutput(
                 f"tool output failed validation ({errors} errors)", usage, raw
             ) from exc
-        return ExtractResult(items=output.items, receipt=output.receipt, usage=usage)
+        return ExtractResult(
+            items=output.items,
+            receipt=output.receipt,
+            overview_image=output.overview_image,
+            usage=usage,
+        )

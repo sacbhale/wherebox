@@ -1,0 +1,6 @@
+{# A square crop of an item's preferred box (app/capture/boxes.py Crop): the display photo as
+   a background, sized and positioned from the box (numbers only, never model text). Used by
+   the review queue (64 px) and the item rows (48 px, class "item-thumb"). #}
+{% macro crop_link(crop, href, id, label, class="review-crop") %}<a class="{{ class }}" id="{{ id }}" href="{{ href }}"
+  style="background-image:url('{{ crop.url }}');background-size:{{ crop.background_size }};background-position:{{ crop.background_position }}"
+  aria-label="{{ label }}"></a>{% endmacro %}

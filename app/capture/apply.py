@@ -123,7 +123,7 @@ def apply_shelf(
     extras: dict[str, Any],
 ) -> list[int]:
     """Photo capture: every item goes to the capture's location (AC-13, AC-14), with its
-    boxes on the capture's photos."""
+    boxes on the capture's photos; the capture's overview photo is recorded."""
     location_id, moved = resolve_location(conn, capture["location_id"])
     ids = [
         insert_with_boxes(
@@ -136,6 +136,7 @@ def apply_shelf(
         )
         for item in normalize_predictions("shelf", result)
     ]
+    boxes.record_overview(conn, capture["id"], result, image_photo_ids)
     search.reindex_items(conn, ids)
     return ids
 

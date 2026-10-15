@@ -5,18 +5,33 @@
    (built from the capture or case id), so several galleries can share a page. The click
    handling lives in app.js (event delegation, so htmx swaps need no re-binding). #}
 
-{% macro strip(prefix, frames, label="Photos", focusable=True) %}
+{# ``key_attr``: the boxes' key attribute (the location page's photo uses
+   data-overview-key: its boxes find their row in the item list, outside any gallery).
+   ``pin`` ({url, pinned}): each displayable photo gets a "Use as location photo" button
+   posting to ``pin.url`` (an error shows beside it); the photo ``pin.pinned`` says "Location
+   photo" instead. #}
+{% macro strip(prefix, frames, label="Photos", focusable=True, key_attr="data-key", pin=None) %}
 <div class="gallery-strip" id="{{ prefix }}-photos" role="group" aria-label="{{ label }}"{% if focusable %} tabindex="0"{% endif %}>
   {% for frame in frames %}
   <figure class="gallery-frame" id="{{ prefix }}-photo-{{ frame.photo_id }}">
     <div class="gallery-image" style="{{ frame.ratio_style }}">
-      <img src="{{ frame.url }}" alt="Photo {{ loop.index }} of {{ frames|length }}" loading="lazy"
+      <img src="{{ frame.url }}" alt="Photo {{ loop.index }} of {{ frames|length }}" loading="lazy" draggable="false"
            {% if frame.width and frame.height %}width="{{ frame.width }}" height="{{ frame.height }}"{% endif %}>
-      {% for m in frame.marks %}<span class="box{% if m.active %} is-active{% endif %}" data-key="{{ m.key }}"
+      {% for m in frame.marks %}<span class="box{% if m.active %} is-active{% endif %}" {{ key_attr }}="{{ m.key }}"
         {%- if m.model is not none %} data-model="{{ m.model }}"{% if m.model != 0 %} hidden{% endif %}{% endif %}
         style="{{ m.style }}" aria-hidden="true">{% if m.number %}<span class="box-label {{ m.label_class }}">{{ m.number }}</span>{% endif %}</span>{% endfor %}
     </div>
     {% if frames|length > 1 %}<figcaption class="muted">{{ loop.index }} / {{ frames|length }}</figcaption>{% endif %}
+    {% if pin and frame.width and frame.height %}
+    {% if frame.photo_id == pin.pinned %}<span class="muted pin-done">Location photo</span>
+    {% else %}<div class="pin-slot" id="{{ prefix }}-pin-slot-{{ frame.photo_id }}">
+      <button type="button" class="secondary pin-photo" id="{{ prefix }}-pin-{{ frame.photo_id }}"
+              hx-post="{{ pin.url }}" hx-vals='{"photo_id": "{{ frame.photo_id }}"}'
+              hx-target="closest .pin-slot" hx-swap="outerHTML" data-show-errors
+              data-error-target="#{{ prefix }}-pin-msg-{{ frame.photo_id }}">Use as location photo</button>
+      <div class="form-message" id="{{ prefix }}-pin-msg-{{ frame.photo_id }}" data-form-message></div>
+    </div>{% endif %}
+    {% endif %}
   </figure>
   {% endfor %}
 </div>
@@ -29,12 +44,12 @@
 {%- endmacro %}
 
 {# A capture group's photos and items. ``highlight``: an item id to start highlighted. #}
-{% macro group_gallery(prefix, group, highlight=None) %}
+{% macro group_gallery(prefix, group, highlight=None, pin=None) %}
 {% set frames = group_frames(group, highlight) %}
 {% set active = group.item(highlight) if highlight else None %}
 <div class="gallery{% if active and active.marked %} has-active{% endif %}" id="{{ prefix }}" data-gallery
      {%- if active and active.marked %} data-scroll-active{% endif %}>
-  {% if frames %}{{ strip(prefix, frames, "Photos of this capture") }}{% endif %}
+  {% if frames %}{{ strip(prefix, frames, "Photos of this capture", pin=pin) }}{% endif %}
   {% if group.items %}
   <ul class="gallery-items" id="{{ prefix }}-items">
     {% for entry in group.items %}

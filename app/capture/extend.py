@@ -150,6 +150,7 @@ def apply_extend(
         if quantity > here[item_id]["quantity"]:
             reconcile.propose(conn, "quantity", item_id, capture_id, quantity)
     conn.execute("UPDATE captures SET known_count = ? WHERE id = ?", (len(counted), capture_id))
+    boxes.record_overview(conn, capture_id, result, image_photo_ids)
     for item_id in flagged:
         conn.execute(
             "UPDATE items SET needs_review = 1 WHERE id = ? AND deleted_at IS NULL", (item_id,)

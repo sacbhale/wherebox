@@ -5,15 +5,29 @@ Writes run inside the capture apply ``write_tx``. Replacement is per photo: an i
 deleted only on the photos where this call gave it at least one box, then the new ones are
 inserted; on the call's other photos its older boxes stay (a model that leaves a box out has
 not shown the item is absent there). Annotation data, not an item/location/ledger soft
-delete. Reads serve the item page ("Where it was seen") and the review queue crops.
+delete. Reads serve the item page ("Where it was seen"), the review queue and item row crops,
+the item photo view and the location page's photo.
+
+A box the user drew ("Fix outline", ``source='user'``, spec-location-photo R4) replaces the
+item's boxes on its photo in its own write_tx, and model boxes never replace it.
 """
 
+import math
 import sqlite3
-from collections.abc import Iterable, Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-from app.ai.schemas import MAX_BOXES_PER_IMAGE, ExtractedItem, Fractions, boxes_for_images
+from app.ai.schemas import (
+    MAX_BOXES_PER_IMAGE,
+    ExtractedItem,
+    ExtractResult,
+    Fractions,
+    boxes_for_images,
+)
 from app.capture.groups import Box
+from app.capture.overview import DISPLAYABLE, overview
+from app.db.connection import write_tx
 from app.db.timestamps import NOW
 
 # Review crop: the box grown by this fraction of its size on every side.
@@ -43,6 +57,34 @@ def first_boxed_photo(boxes: Sequence[PhotoBox], image_photo_ids: Sequence[int])
     return image_photo_ids[0] if image_photo_ids else None
 
 
+def overview_photo(result: ExtractResult, image_photo_ids: Sequence[int]) -> int | None:
+    """The call photo that shows the most of the place: the model's ``overview_image`` when
+    it is the index of an image sent, else the photo with the most item boxes (first in call
+    order on a tie), else the first photo; None without photos."""
+    if not image_photo_ids:
+        return None
+    index = result.overview_image
+    if isinstance(index, int) and 0 <= index < len(image_photo_ids):
+        return image_photo_ids[index]
+    counts = Counter(
+        photo_id for item in result.items for photo_id, _box in photo_boxes(item, image_photo_ids)
+    )
+    return max(image_photo_ids, key=lambda photo_id: counts.get(photo_id, 0))
+
+
+def record_overview(
+    conn: sqlite3.Connection,
+    capture_id: int,
+    result: ExtractResult,
+    image_photo_ids: Sequence[int],
+) -> None:
+    """Call inside the apply write_tx: ``captures.overview_photo_id`` = ``overview_photo``."""
+    conn.execute(
+        "UPDATE captures SET overview_photo_id = ? WHERE id = ?",
+        (overview_photo(result, image_photo_ids), capture_id),
+    )
+
+
 def replace_boxes(
     conn: sqlite3.Connection,
     item_id: int,
@@ -51,14 +93,22 @@ def replace_boxes(
 ) -> int:
     """Call inside write_tx. Per photo: on each photo that has one of ``boxes``, the item's
     rows are replaced by those boxes (at most MAX_BOXES_PER_IMAGE per photo, in order); its
-    rows on other photos are kept, so without boxes nothing changes. Returns the rows
-    inserted."""
+    rows on other photos are kept, so without boxes nothing changes. A photo where the item
+    has a user box (``source='user'``, "Fix outline") is skipped: model boxes never replace
+    it. Returns the rows inserted."""
+    user_photos = {
+        row[0]
+        for row in conn.execute(
+            "SELECT photo_id FROM item_boxes WHERE item_id = ? AND source = 'user'", (item_id,)
+        )
+    }
+    boxes = [(photo_id, box) for photo_id, box in boxes if photo_id not in user_photos]
     if not boxes:
         return 0
     photo_ids = sorted({photo_id for photo_id, _box in boxes})
     marks = ",".join("?" * len(photo_ids))
     conn.execute(
-        f"DELETE FROM item_boxes WHERE item_id = ? AND photo_id IN ({marks})",
+        f"DELETE FROM item_boxes WHERE item_id = ? AND source = 'model' AND photo_id IN ({marks})",
         (item_id, *photo_ids),
     )
     counts: dict[int, int] = {}
@@ -145,10 +195,20 @@ def sightings(conn: sqlite3.Connection, item_id: int) -> list[Sighting]:
         if own is None or not displayable(own["rel_path"], own["display_rel_path"]):
             return []
         photo_ids = [own["id"]]
-    marks = ",".join("?" * len(photo_ids))
+    return _with_context(conn, photo_ids, by_photo)
+
+
+def _with_context(
+    conn: sqlite3.Connection, photo_ids: list[int], by_photo: dict[int, list[Box]]
+) -> list[Sighting]:
+    """Sightings of ``photo_ids`` (in that order; unknown ids left out) with ``by_photo``'s
+    boxes."""
     context = {
         r["id"]: r
-        for r in conn.execute(_PHOTO_CONTEXT + f" WHERE p.id IN ({marks})", tuple(photo_ids))
+        for chunk in _chunks(photo_ids)
+        for r in conn.execute(
+            _PHOTO_CONTEXT + f" WHERE p.id IN ({','.join('?' * len(chunk))})", tuple(chunk)
+        )
     }
     return [
         Sighting(
@@ -169,10 +229,11 @@ def sightings(conn: sqlite3.Connection, item_id: int) -> list[Sighting]:
 
 @dataclass(frozen=True)
 class Crop:
-    """The review-queue crop of an item: its first box (by photo position), padded by
-    CROP_PADDING and squared (``crop_region``). ``background_size``/``background_position``
-    are CSS values (numbers only) that show that region of the display photo in a square
-    element (``background-image: url(<url>)``) without stretching it."""
+    """The crop of an item (review queue, item rows): its preferred box (``review_crops``),
+    padded by CROP_PADDING and squared (``crop_region``).
+    ``background_size``/``background_position`` are CSS values (numbers only) that show
+    that region of the display photo in a square element (``background-image: url(<url>)``)
+    without stretching it."""
 
     item_id: int
     photo_id: int
@@ -239,27 +300,143 @@ def crop_region(
     return cx0, cy0, cx1, cy1
 
 
+IN_CHUNK = 500  # ids per ``IN (...)`` list, far below SQLite's variable limit
+
+
+def _chunks(ids: Sequence[int]) -> Iterable[Sequence[int]]:
+    for start in range(0, len(ids), IN_CHUNK):
+        yield ids[start : start + IN_CHUNK]
+
+
 def review_crops(conn: sqlite3.Connection, item_ids: Iterable[int]) -> dict[int, Crop]:
-    """{item id: crop} for the given items that have a box (items without one are absent)."""
+    """{item id: crop} for the given items that have a box (items without one are absent),
+    in one query. The preferred box: the latest user box ("Fix outline"), else a box of the
+    newest capture that boxed the item (a moved or reconciled item shows its latest
+    sighting), first by photo position."""
     ids = list(dict.fromkeys(item_ids))
     if not ids:
         return {}
-    marks = ",".join("?" * len(ids))
-    rows = conn.execute(
-        "SELECT b.item_id, b.photo_id, b.x0, b.y0, b.x1, b.y1, p.capture_id, p.width,"
-        " p.height, coalesce(c.parent_capture_id, c.id) AS root_id"
-        " FROM item_boxes b JOIN photos p ON p.id = b.photo_id"
-        " JOIN captures c ON c.id = p.capture_id"
-        f" WHERE b.item_id IN ({marks})"
-        " ORDER BY b.item_id, p.capture_id, p.position, p.id, b.idx",
-        tuple(ids),
-    ).fetchall()
     crops: dict[int, Crop] = {}
-    for r in rows:
-        if r["item_id"] in crops:
-            continue
-        region = crop_region(r["x0"], r["y0"], r["x1"], r["y1"], r["width"], r["height"])
-        crops[r["item_id"]] = Crop(
-            r["item_id"], r["photo_id"], r["capture_id"], r["root_id"], *region
-        )
+    for chunk in _chunks(ids):
+        marks = ",".join("?" * len(chunk))
+        rows = conn.execute(
+            "SELECT b.item_id, b.photo_id, b.x0, b.y0, b.x1, b.y1, p.capture_id, p.width,"
+            " p.height, coalesce(c.parent_capture_id, c.id) AS root_id"
+            " FROM item_boxes b JOIN photos p ON p.id = b.photo_id"
+            " JOIN captures c ON c.id = p.capture_id"
+            f" WHERE b.item_id IN ({marks})"
+            " ORDER BY b.item_id, b.source = 'user' DESC,"
+            " CASE WHEN b.source = 'user' THEN b.id END DESC, b.capture_id DESC, p.position,"
+            " p.id, b.idx",
+            tuple(chunk),
+        ).fetchall()
+        for r in rows:
+            if r["item_id"] in crops:
+                continue
+            region = crop_region(r["x0"], r["y0"], r["x1"], r["y1"], r["width"], r["height"])
+            crops[r["item_id"]] = Crop(
+                r["item_id"], r["photo_id"], r["capture_id"], r["root_id"], *region
+            )
     return crops
+
+
+# ---------------------------------------------------------------- user boxes ("Fix outline")
+
+# The smallest outline side a user may draw, as a fraction of the photo (data-min in the page).
+MIN_USER_BOX = 0.02
+
+
+class BoxError(ValueError):
+    """A rejected outline (HTTP 400)."""
+
+
+def parse_user_box(values: Mapping[str, str]) -> tuple[float, float, float, float]:
+    """(x0, y0, x1, y1) from form strings: finite numbers with 0 <= x0 < x1 <= 1 and
+    0 <= y0 < y1 <= 1, each side at least MIN_USER_BOX. Raises BoxError."""
+    coords = []
+    for key in ("x0", "y0", "x1", "y1"):
+        try:
+            value = float((values.get(key) or "").strip())
+        except ValueError as exc:
+            raise BoxError("The outline needs four numbers.") from exc
+        if not math.isfinite(value):
+            raise BoxError("The outline needs four numbers.")
+        coords.append(value)
+    x0, y0, x1, y1 = coords
+    if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+        raise BoxError("The outline must be inside the photo.")
+    # The page posts values rounded to 6 decimals, so a side drawn at exactly the minimum can
+    # arrive a hair under it.
+    if x1 - x0 < MIN_USER_BOX - 1e-6 or y1 - y0 < MIN_USER_BOX - 1e-6:
+        raise BoxError("The outline is too small; draw a bigger one.")
+    return x0, y0, x1, y1
+
+
+def set_user_box(
+    conn: sqlite3.Connection,
+    item_id: int,
+    photo_id: int,
+    coords: tuple[float, float, float, float],
+) -> None:
+    """ "Fix outline": the item's boxes on ``photo_id`` are replaced by one ``source='user'``
+    box (idx 0, ``capture_id`` = the photo's capture), in one write_tx. Raises BoxError for
+    a photo without a capture."""
+    with write_tx(conn):
+        photo = conn.execute("SELECT capture_id FROM photos WHERE id = ?", (photo_id,)).fetchone()
+        if photo is None or photo["capture_id"] is None:
+            raise BoxError("This photo cannot be outlined.")
+        conn.execute(
+            "DELETE FROM item_boxes WHERE item_id = ? AND photo_id = ?", (item_id, photo_id)
+        )
+        conn.execute(
+            "INSERT INTO item_boxes (item_id, photo_id, capture_id, idx, x0, y0, x1, y1, source,"
+            f" created_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?, 'user', {NOW})",
+            (item_id, photo_id, photo["capture_id"], *coords),
+        )
+
+
+def photo_choices(conn: sqlite3.Connection, item_id: int) -> list[Sighting]:
+    """The photos the item photo view offers (and ``POST /items/{id}/box`` accepts): where
+    it was seen (``sightings``), plus its current location's photo (``overview.overview``),
+    each with a display JPEG and a display size."""
+    item = conn.execute("SELECT location_id FROM items WHERE id = ?", (item_id,)).fetchone()
+    if item is None:
+        return []
+    choices = sightings(conn, item_id)
+    location = conn.execute(
+        "SELECT * FROM locations WHERE id = ? AND deleted_at IS NULL", (item["location_id"],)
+    ).fetchone()
+    view = overview(conn, location) if location is not None else None
+    if view is not None and view.photo_id not in {s.photo_id for s in choices}:
+        choices += _with_context(conn, [view.photo_id], {})
+    if not choices:
+        return []
+    shown = {
+        row[0]
+        for chunk in _chunks([s.photo_id for s in choices])
+        for row in conn.execute(
+            f"SELECT p.id FROM photos p WHERE p.id IN ({','.join('?' * len(chunk))})"
+            f" AND {DISPLAYABLE}",
+            tuple(chunk),
+        )
+    }
+    return [s for s in choices if s.photo_id in shown]
+
+
+def location_boxes(
+    conn: sqlite3.Connection, photo_id: int, location_id: int
+) -> dict[int, list[Box]]:
+    """{item id: its boxes on ``photo_id``} for the live items directly in ``location_id``
+    (the location page's photo)."""
+    found: dict[int, list[Box]] = {}
+    for r in conn.execute(
+        "SELECT b.item_id, b.photo_id, b.idx, b.x0, b.y0, b.x1, b.y1 FROM item_boxes b"
+        " JOIN items i ON i.id = b.item_id"
+        " WHERE b.photo_id = ? AND i.location_id = ? AND i.deleted_at IS NULL"
+        " ORDER BY b.item_id, b.idx",
+        (photo_id, location_id),
+    ):
+        found.setdefault(r["item_id"], []).append(
+            Box(r["photo_id"], r["idx"], r["x0"], r["y0"], r["x1"], r["y1"])
+        )
+    return found

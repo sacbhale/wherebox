@@ -77,6 +77,16 @@ def _parse_date(text: str, label: str) -> str | None:
         raise ItemError(f"{label} must be a date (YYYY-MM-DD).") from exc
 
 
+def clean_user_name(name: str) -> str:
+    """A name typed by the user: whitespace collapsed, 1-200 characters. Raises ItemError."""
+    name = " ".join(name.split())
+    if not name:
+        raise ItemError("Name is required.")
+    if len(name) > 200:
+        raise ItemError("Name is too long.")
+    return name
+
+
 def parse_form(form: Mapping[str, str]) -> tuple[ItemData | None, dict[str, str]]:
     """Validate manual-form strings. Returns (data, {}) or (None, {field: message})."""
     errors: dict[str, str] = {}
@@ -84,11 +94,11 @@ def parse_form(form: Mapping[str, str]) -> tuple[ItemData | None, dict[str, str]
     def field(key: str) -> str:
         return (form.get(key) or "").strip()
 
-    name = " ".join(field("name").split())
-    if not name:
-        errors["name"] = "Name is required."
-    elif len(name) > 200:
-        errors["name"] = "Name is too long."
+    try:
+        name = clean_user_name(field("name"))
+    except ItemError as exc:
+        errors["name"] = str(exc)
+        name = ""
     try:
         quantity = int(field("quantity") or "1")
         if not 0 <= quantity <= MAX_QUANTITY:
@@ -259,13 +269,26 @@ def adjust_quantity(conn: sqlite3.Connection, item_id: int, delta: int) -> int |
     return None if row is None else row[0]
 
 
-def use_up(conn: sqlite3.Connection, item_id: int) -> bool:
-    """ "Used up": soft-delete the item and drop its FTS row. False if already gone."""
+def rename(conn: sqlite3.Connection, item_id: int, name: str) -> None:
+    """Inline rename: one UPDATE and the FTS reindex (needs_review unchanged). Raises
+    ItemError for a bad name or an item that is gone."""
+    name = clean_user_name(name)
     with write_tx(conn):
         cur = conn.execute(
-            f"UPDATE items SET deleted_at = {NOW}, updated_at = {NOW} "
+            f"UPDATE items SET name = ?, updated_at = {NOW} WHERE id = ? AND deleted_at IS NULL",
+            (name, item_id),
+        )
+        if cur.rowcount == 0:
+            raise ItemError("Item not found.")
+        search.reindex_items(conn, [item_id])
+
+
+def _soft_delete(conn: sqlite3.Connection, item_id: int, reason: str) -> bool:
+    with write_tx(conn):
+        cur = conn.execute(
+            f"UPDATE items SET deleted_at = {NOW}, deleted_reason = ?, updated_at = {NOW} "
             "WHERE id = ? AND deleted_at IS NULL",
-            (item_id,),
+            (reason, item_id),
         )
         if cur.rowcount == 0:
             return False
@@ -273,8 +296,20 @@ def use_up(conn: sqlite3.Connection, item_id: int) -> bool:
     return True
 
 
+def use_up(conn: sqlite3.Connection, item_id: int) -> bool:
+    """ "Used up": soft-delete the item and drop its FTS row. False if already gone."""
+    return _soft_delete(conn, item_id, "used_up")
+
+
+def delete_item(conn: sqlite3.Connection, item_id: int) -> bool:
+    """ "Delete" (a wrong detection): the same soft delete as ``use_up`` (boxes and photos
+    kept, undone by ``undo_use_up``) with ``deleted_reason = 'deleted'``, which keeps it out
+    of comparison prefills and capture galleries. False if already gone."""
+    return _soft_delete(conn, item_id, "deleted")
+
+
 def undo_use_up(conn: sqlite3.Connection, item_id: int) -> bool:
-    """Restore a used-up item (and its FTS row). False if it was not used up."""
+    """Restore a used-up or deleted item (and its FTS row). False if it was not gone."""
     with write_tx(conn):
         row = conn.execute(
             "SELECT location_id FROM items WHERE id = ? AND deleted_at IS NOT NULL", (item_id,)
@@ -285,7 +320,8 @@ def undo_use_up(conn: sqlite3.Connection, item_id: int) -> bool:
         if locations.get(conn, location_id) is None:  # defensive: deletes re-parent items
             location_id = locations.inbox(conn)["id"]
         conn.execute(
-            f"UPDATE items SET deleted_at = NULL, location_id = ?, updated_at = {NOW} WHERE id = ?",
+            "UPDATE items SET deleted_at = NULL, deleted_reason = NULL, location_id = ?,"
+            f" updated_at = {NOW} WHERE id = ?",
             (location_id, item_id),
         )
         search.reindex_items(conn, [item_id])

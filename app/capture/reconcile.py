@@ -113,5 +113,6 @@ def apply_reconcile(
             propose(conn, "quantity", item_id, capture_id, quantity)
     for item_id in (existing.keys() & sent) - seen.keys():
         propose(conn, "missing", item_id, capture_id)
+    boxes.record_overview(conn, capture_id, result, image_photo_ids)
     search.reindex_items(conn, new_ids)
     return new_ids

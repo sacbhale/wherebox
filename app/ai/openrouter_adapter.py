@@ -475,6 +475,9 @@ class OpenRouterProvider:
         return ExtractResult(
             items=[item for output in outputs for item in output.items],
             receipt=next((o.receipt for o in outputs if o.receipt is not None), None),
+            overview_image=next(
+                (o.overview_image for o in outputs if o.overview_image is not None), None
+            ),
             usage=usage,
         )
 

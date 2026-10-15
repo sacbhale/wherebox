@@ -224,17 +224,23 @@ def case_capture_id(conn: sqlite3.Connection, capture_id: int) -> int:
 
 def prefill(conn: sqlite3.Connection, capture_id: int) -> Prefill:
     """The items the capture's group created (the root and its done extensions; current name
-    and quantity, and price), used up ones included, in creation order."""
+    and quantity, and price), used up ones included, deleted ones (wrong detections) left
+    out, in creation order."""
     ids = groups.done_capture_ids(conn, case_capture_id(conn, capture_id))
     marks = ",".join("?" * len(ids))
     rows = conn.execute(
-        "SELECT name, quantity, price_cents, deleted_at, created_at, updated_at FROM items"
-        f" WHERE capture_id IN ({marks}) ORDER BY id",
+        "SELECT name, quantity, price_cents, deleted_at, deleted_reason, created_at, updated_at"
+        f" FROM items WHERE capture_id IN ({marks}) ORDER BY id",
         ids,
     ).fetchall()
     changed = any(r["deleted_at"] is not None or r["updated_at"] != r["created_at"] for r in rows)
     return Prefill(
-        [Expected(r["name"], max(r["quantity"], 1), r["price_cents"]) for r in rows], changed
+        [
+            Expected(r["name"], max(r["quantity"], 1), r["price_cents"])
+            for r in rows
+            if r["deleted_reason"] != "deleted"
+        ],
+        changed,
     )
 
 

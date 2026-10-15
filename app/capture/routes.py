@@ -10,7 +10,7 @@ form is then parsed with at most 7 files and 20 fields. Photo and reconcile take
 import logging
 import sqlite3
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -60,6 +60,24 @@ def _view(raw: str) -> str:
     return raw if raw in VIEWS else "panel"
 
 
+def _pin(conn: sqlite3.Connection, group: groups.Group | None) -> dict[str, Any] | None:
+    """Where the group page's "Use as location photo" buttons post and the photo pinned now
+    ({url, pinned}), or None when they are not offered: a done photo/reconcile group of a
+    live location other than the Inbox."""
+    if group is None or group.location_id is None:
+        return None
+    root = group.root
+    if root["status"] != "done" or root["type"] not in ("photo", "reconcile"):
+        return None
+    location = locations.get(conn, group.location_id)
+    if location is None or location["is_system"]:
+        return None
+    return {
+        "url": f"/l/{location['short_code']}/overview",
+        "pinned": location["overview_photo_id"],
+    }
+
+
 def _status(
     request: Request, conn: sqlite3.Connection, capture_id: int, view: str = "panel"
 ) -> Response:
@@ -88,6 +106,7 @@ def _status(
             "view": view,
             "group": group,
             "extension": extension,
+            "pin": _pin(conn, group) if view == "group" else None,
             "oob": True,
         },
         status_code=STOP_POLLING if finished else 200,
@@ -495,6 +514,7 @@ def capture_detail(
             "root": root,
             "highlight": item,
             "refusal": groups.extend_refusal(root),
+            "pin": _pin(conn, group),
             "now": utc_iso(request_now(request)),
         },
     )

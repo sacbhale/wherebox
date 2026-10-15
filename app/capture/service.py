@@ -314,10 +314,12 @@ def active(conn: sqlite3.Connection, location_id: int | None = None) -> list[sql
 
 
 def outcome(conn: sqlite3.Connection, capture_id: int) -> list[sqlite3.Row]:
-    """Where a capture's items went: per location, name, code, item count and review count."""
+    """Where a capture's items went: per location, name, code, item count and review count.
+    Items deleted as wrong detections do not count; used-up ones do."""
     return conn.execute(
         "SELECT l.name, l.short_code, count(*) AS n, sum(i.needs_review) AS review"
         " FROM items i JOIN locations l ON l.id = i.location_id"
-        " WHERE i.capture_id = ? GROUP BY l.id ORDER BY l.name COLLATE NOCASE",
+        " WHERE i.capture_id = ? AND i.deleted_reason IS NOT 'deleted'"
+        " GROUP BY l.id ORDER BY l.name COLLATE NOCASE",
         (capture_id,),
     ).fetchall()

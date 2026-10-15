@@ -17,7 +17,7 @@
 {% with capture = root, position = 0, outcome = [], view = "group" %}{% include "partials/capture_status.html" %}{% endwith %}
 {% endif %}
 
-{{ group_section(group, highlight) }}
+{{ group_section(group, highlight, pin=pin) }}
 
 {% if root.type == "photo" %}
 {{ extend_section(group, refusal) }}

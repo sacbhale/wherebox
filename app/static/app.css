@@ -169,6 +169,20 @@ ul.location-tree ul ul ul ul ul { padding-left: 0.375rem; }
   background: var(--accent-soft); color: var(--fg);
 }
 .item.used-up, .item.moved { color: var(--muted); }
+/* The name is a button (tap: inline rename) that looks like text. */
+button.item-name {
+  min-height: 44px; padding: 0; background: none; border: 0; border-radius: 0;
+  color: var(--fg); text-align: left; justify-content: flex-start; overflow-wrap: anywhere;
+}
+.rename-form { display: flex; flex-direction: column; gap: 0.35rem; }
+.rename-actions { display: flex; gap: 0.5rem; }
+/* Row thumbnail: a 48px crop of the item's outline (partials/crop.html). */
+.item-thumb {
+  flex: 0 0 auto; width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--border);
+  background-repeat: no-repeat; background-color: var(--surface);
+}
+.item.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
 .item.moved a { overflow-wrap: anywhere; }
 
 /* Action sheet (bottom sheet, thumb-reachable) */
@@ -185,6 +199,14 @@ ul.location-tree ul ul ul ul ul { padding-left: 0.375rem; }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 .sheet-foot { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
 .sheet-foot > * { flex: 1; }
+.sheet-delete summary {
+  list-style: none; min-height: 44px; display: flex; align-items: center; justify-content: center;
+  border-radius: 0.5rem; background: var(--error); color: #fff; cursor: pointer;
+}
+.sheet-delete summary::-webkit-details-marker { display: none; }
+.sheet-delete[open] summary { background: var(--surface); color: var(--fg); border: 1px solid var(--border); }
+.sheet-delete p { margin: 0.5rem 0; }
+.sheet-delete button { width: 100%; }
 ul.move-targets { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.35rem; }
 .move-target { width: 100%; justify-content: flex-start; text-align: left; overflow-wrap: anywhere; }
 
@@ -467,3 +489,30 @@ ul.sighting-list { list-style: none; padding: 0; margin: 0; display: flex; flex-
   display: inline-block; min-width: 1.6em; padding: 0 0.25em; margin: 0 0.15em; border-radius: 0.3rem;
   text-align: center; font-weight: 700; font-size: 0.85rem; background: var(--fg); color: var(--bg);
 }
+
+/* Location page: the location's photo; its outlines find their item row. */
+.location-photo .gallery-strip { padding-bottom: 0; }
+.location-photo .links { margin: 0.25rem 0 0.75rem; }
+.pin-photo { margin-top: 0.35rem; }
+.pin-done { display: inline-flex; align-items: center; min-height: 44px; }
+
+/* Item photo view: "Fix outline" drawing (app.js). Only the photo in drawing mode stops the
+   page from scrolling under a finger. */
+.item-photo .gallery-image img, .item-photo .box, .draw-rect {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.item-photo.is-drawing .gallery-image { touch-action: none; cursor: crosshair; }
+.item-photo.is-drawing .box { pointer-events: none; opacity: 0.35; }
+.draw-rect {
+  position: absolute; box-sizing: border-box; z-index: 3; pointer-events: none;
+  border: 3px dashed #22c55e; box-shadow: 0 0 0 2px #000, inset 0 0 0 2px #000;
+  background: rgb(34 197 94 / 0.15);
+}
+.draw-status { min-height: 1.5em; margin: 0.25rem 0; }
+ul.photo-choices { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.photo-choice {
+  display: flex; flex-direction: column; width: 96px; min-height: 44px; text-decoration: none;
+  border: 2px solid transparent; border-radius: 0.5rem; padding: 2px;
+}
+.photo-choice[aria-current="true"] { border-color: var(--accent); }
+.photo-choice .gallery-frame { width: 100%; }

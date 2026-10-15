@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.capture.boxes import Sighting
-from app.capture.groups import Group, GroupPhoto
+from app.capture.groups import Box, Group, GroupPhoto
+from app.capture.overview import Overview
 
 # A label is anchored to the box's right / bottom edge instead of its top-left corner when
 # the box starts this far right / down, so it stays inside the image.
@@ -115,6 +116,18 @@ def sighting_frames(sightings: Iterable[Sighting]) -> list[Frame]:
         ]
         frames.append(Frame(sighting.photo_id, sighting.width, sighting.height, marks))
     return frames
+
+
+def overview_frames(view: Overview, item_boxes: Mapping[int, list[Box]]) -> list[Frame]:
+    """The location page's photo with its live direct items' boxes, unlabelled and keyed by
+    item id (``item_boxes``: ``boxes.location_boxes``)."""
+    marks = [
+        made
+        for item_id, found in item_boxes.items()
+        for box in found
+        if (made := mark(str(item_id), None, box)) is not None
+    ]
+    return [Frame(view.photo_id, view.width, view.height, marks)]
 
 
 def report_frames(photos: Sequence[GroupPhoto], models: Sequence[Any]) -> list[Frame]:

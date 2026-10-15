@@ -4,11 +4,9 @@
 {# Each action is one hx-post; the empty answer replaces (removes) the row (AC-7). #}
 {% set row_swap = 'hx-target="closest .review-row" hx-swap="outerHTML"' %}
 {% macro thumb(row) %}{% if row.photo_path and row.photo_path.lower().endswith(thumbnail_suffixes) %}<img class="review-thumb" src="/photos/{{ row.photo_id }}" alt="" loading="lazy" width="56" height="56">{% endif %}{% endmacro %}
-{# A crop of the item's first box: the display photo as a background, sized and positioned
-   from the box (numbers only); tapping opens the capture with the item highlighted. #}
-{% macro crop_link(row, crop) %}<a class="review-crop" id="review-crop-{{ row.id }}" href="/captures/{{ crop.root_capture_id }}?item={{ row.id }}"
-  style="background-image:url('{{ crop.url }}');background-size:{{ crop.background_size }};background-position:{{ crop.background_position }}"
-  aria-label="Where {{ row.name }} was seen"></a>{% endmacro %}
+{# A crop of the item's preferred box (partials/crop.html); tapping opens the capture with
+   the item highlighted. #}
+{% from "partials/crop.html" import crop_link %}
 {% macro item_label(row) %}<a href="/items/{{ row.id }}/edit">{{ row.name }}</a> <span class="muted">in <a href="/l/{{ row.location_code }}">{{ row.location_name }}</a></span>{% endmacro %}
 <h1>Review</h1>
 {% if not (failed or flagged or missing or quantity) %}<p class="muted" id="review-empty">Nothing to review.</p>{% endif %}
@@ -38,7 +36,7 @@
   <ul class="review-list">
     {% for row in flagged %}
     <li class="review-row" id="review-item-{{ row.id }}" data-item-id="{{ row.id }}">
-      {% if crops[row.id] %}{{ crop_link(row, crops[row.id]) }}{% else %}{{ thumb(row) }}{% endif %}
+      {% if crops[row.id] %}{{ crop_link(crops[row.id], "/captures/%d?item=%d" % (crops[row.id].root_capture_id, row.id), "review-crop-%d" % row.id, "Where " ~ row.name ~ " was seen") }}{% else %}{{ thumb(row) }}{% endif %}
       <div>{{ item_label(row) }} <span class="muted">× {{ row.quantity }}{% if row.confidence is not none %} · {{ (row.confidence * 100)|round|int }}% sure{% endif %}</span></div>
       <div class="review-actions">
         <button type="button" class="review-keep" hx-post="/review/items/{{ row.id }}/keep" {{ row_swap|safe }}>Keep</button>

@@ -8,6 +8,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Literal
 
+from app.capture.overview import DISPLAYABLE
 from app.db.connection import write_tx
 from app.db.timestamps import NOW
 from app.inventory import search, shortcode
@@ -358,3 +359,40 @@ def delete(conn: sqlite3.Connection, location_id: int) -> DeleteCounts:
         )
         search.reindex_items(conn, moved_subtree_items)
     return counts
+
+
+# ---------------------------------------------------------------- overview photo
+# (read side: app/capture/overview.py)
+
+
+def pin_overview(conn: sqlite3.Connection, location_id: int, photo_id: int) -> None:
+    """ "Use as location photo": the photo must belong to a done capture of a photo/reconcile
+    capture group of this location (the root or one of its extensions) and be displayable.
+    Raises LocationError."""
+    with write_tx(conn):
+        row = _require_live(conn, location_id)
+        if row["is_system"]:
+            raise LocationError("The Inbox has no location photo.")
+        photo = conn.execute(
+            "SELECT 1 FROM photos p JOIN captures c ON c.id = p.capture_id"
+            " JOIN captures r ON r.id = coalesce(c.parent_capture_id, c.id)"
+            " WHERE p.id = ? AND c.status = 'done' AND r.type IN ('photo', 'reconcile')"
+            f" AND r.location_id = ? AND {DISPLAYABLE}",
+            (photo_id, location_id),
+        ).fetchone()
+        if photo is None:
+            raise LocationError("This photo is not one of this location's photos.")
+        conn.execute(
+            f"UPDATE locations SET overview_photo_id = ?, updated_at = {NOW} WHERE id = ?",
+            (photo_id, location_id),
+        )
+
+
+def unpin_overview(conn: sqlite3.Connection, location_id: int) -> None:
+    """ "Pick automatically": forget the pinned photo. Raises LocationError."""
+    with write_tx(conn):
+        _require_live(conn, location_id)
+        conn.execute(
+            f"UPDATE locations SET overview_photo_id = NULL, updated_at = {NOW} WHERE id = ?",
+            (location_id,),
+        )

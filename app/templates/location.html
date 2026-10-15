@@ -19,6 +19,21 @@
   {% endfor %}
 </div>
 {% endif %}
+{% if overview %}
+{# The location's photo: its live direct items' outlines; tapping one finds its row. #}
+{% from "partials/gallery.html" import strip %}
+<section class="location-photo" id="location-photo">
+  {{ strip("location-photo", overview_frames, "Photo of " ~ location.name, focusable=False, key_attr="data-overview-key") }}
+  <p class="links">
+    {% if subtree %}<span class="muted">Outlines show items directly here.</span> · {% endif %}
+    <a href="/captures/{{ overview.root_capture_id }}" id="location-photo-all">All photos</a>
+    {%- if overview.pinned %} ·
+    <button type="button" class="link" id="location-photo-auto"
+            hx-post="/l/{{ location.short_code }}/overview/auto">Pick automatically</button>
+    {%- endif %}
+  </p>
+</section>
+{% endif %}
 
 <div class="actions">
   <a class="button" href="/l/{{ location.short_code }}/capture">Capture</a>
@@ -69,8 +84,8 @@
   {%- endif %}
 </p>
 
-<section class="panel" id="tag">
-  <h2>Tag</h2>
+<details class="panel" id="tag">
+  <summary>Tag: QR code, link and labels</summary>
   <div class="row">
     <input id="permanent-url" class="url" type="text" readonly value="{{ url }}" aria-label="Permanent URL">
     <button type="button" data-copy="#permanent-url">Copy</button>
@@ -83,7 +98,7 @@
     <a href="/labels?ids={{ location.id }}" id="label-sheet">Add to label sheet</a>
   </p>
   <p class="muted">Code {{ location.short_code }}</p>
-</section>
+</details>
 
 {% if not location.is_system %}
 <p class="links">

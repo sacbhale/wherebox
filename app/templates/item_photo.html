@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ item.name }} · photo · {{ app_name }}{% endblock %}
+{% block content %}
+{% from "partials/gallery.html" import strip %}
+{% set frame = sighting_frames([selected])[0] %}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/l/{{ item.location_code }}" id="item-photo-back">Back to {{ item.location_path }}</a>
+</nav>
+<h1>{{ item.name }}</h1>
+<p class="muted">In <a href="/l/{{ item.location_code }}">{{ item.location_path }}</a>{% if selected.location_name %} · photo taken in {{ selected.location_name }}, {{ selected.seen_at[:10] }}{% endif %}</p>
+
+{# "Fix outline" (app.js): in drawing mode the photo takes a dragged rectangle (mouse or
+   touch; the page does not scroll while drawing); Save posts it as fractions of the photo. #}
+<div class="item-photo" id="item-photo" data-draw data-min="{{ min_box }}">
+  {{ strip("item-photo", [frame], "Photo of " ~ item.name, focusable=False) }}
+  <p class="muted draw-status" id="item-photo-status" role="status" aria-live="polite" data-draw-status>{% if saved %}Outline saved.{% elif not frame.marks %}This photo has no outline of {{ item.name }} yet.{% endif %}</p>
+  <div class="actions" data-draw-idle>
+    <button type="button" id="fix-outline" data-draw-start>Fix outline</button>
+  </div>
+  <form class="stack" id="outline-form" hx-post="/items/{{ item.id }}/box"
+        hx-target="#item-photo-message" hx-swap="innerHTML"
+        data-show-errors data-error-target="#item-photo-message" data-draw-form hidden>
+    <input type="hidden" name="photo_id" value="{{ selected.photo_id }}">
+    <input type="hidden" name="x0" data-draw-x0>
+    <input type="hidden" name="y0" data-draw-y0>
+    <input type="hidden" name="x1" data-draw-x1>
+    <input type="hidden" name="y1" data-draw-y1>
+    <p class="muted">Drag on the photo around {{ item.name }}. Replaces the outline on this photo.</p>
+    <div class="actions">
+      <button type="submit" id="outline-save" data-draw-save disabled>Save</button>
+      <button type="button" class="secondary" id="outline-cancel" data-draw-cancel>Cancel</button>
+    </div>
+  </form>
+  <div class="form-message" id="item-photo-message" data-form-message></div>
+</div>
+
+{% if choices|length > 1 %}
+<section class="panel" id="item-photo-choices">
+  <h2>Photos of {{ item.name }}</h2>
+  <ul class="photo-choices">
+    {% for choice in choices %}
+    <li>
+      <a class="photo-choice" id="photo-choice-{{ choice.photo_id }}" href="/items/{{ item.id }}/photo?photo={{ choice.photo_id }}"
+         {%- if choice.photo_id == selected.photo_id %} aria-current="true"{% endif %}>
+        {{ strip("photo-choice-" ~ choice.photo_id, sighting_frames([choice]), "Photo " ~ loop.index, focusable=False) }}
+        <span class="muted">{{ loop.index }}{% if not choice.marked %} · no outline{% endif %}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+<p class="links"><a href="/items/{{ item.id }}/edit" id="item-photo-edit">Edit item</a></p>
+{% endblock %}

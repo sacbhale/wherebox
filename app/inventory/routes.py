@@ -14,7 +14,8 @@ from fastapi.responses import RedirectResponse, Response
 from app import label_sheet, qr
 from app.auth import sessions
 from app.auth.csrf import is_htmx, require_htmx
-from app.capture import boxes
+from app.capture import boxes, gallery
+from app.capture import overview as capture_overview
 from app.config import Settings
 from app.db.deps import Conn
 from app.inventory import categories, items, locations, search
@@ -81,6 +82,7 @@ def _editable(request: Request, conn: sqlite3.Connection, code: str) -> sqlite3.
     return row
 
 
+SWITCHER_MAX = 50  # photos in the item photo view's switcher
 INT_MAX = 2**63 - 1  # SQLite's largest integer
 
 
@@ -149,6 +151,7 @@ def search_page(request: Request, conn: Conn, q: str = "") -> Response:
         "filters": filters,
         "results": results,
         "searched": bool(q.strip() or filters.active),
+        "crops": boxes.review_crops(conn, [row["id"] for row in results]),
     }
     if is_htmx(request):
         return templates.TemplateResponse(request, "partials/search_results.html", context)
@@ -189,6 +192,13 @@ def location_page(request: Request, conn: Conn, code: str, sub: str = "") -> Res
     subtree = sub in ("1", "true", "on")
     location_ids = locations.subtree_ids(conn, row["id"]) if subtree else [row["id"]]
     children = locations.children(conn, row["id"])
+    rows = items.list_in(conn, location_ids)
+    overview = capture_overview.overview(conn, row)
+    frames = (
+        gallery.overview_frames(overview, boxes.location_boxes(conn, overview.photo_id, row["id"]))
+        if overview is not None
+        else []
+    )
     return templates.TemplateResponse(
         request,
         "location.html",
@@ -198,7 +208,10 @@ def location_page(request: Request, conn: Conn, code: str, sub: str = "") -> Res
             "children": children,
             # Creation order, so "Shelf 1" ... "Shelf 10" print in order.
             "label_children": sorted(row["id"] for row in children)[:IDS_MAX],
-            "items": items.list_in(conn, location_ids),
+            "items": rows,
+            "crops": boxes.review_crops(conn, [item["id"] for item in rows]),
+            "overview": overview,
+            "overview_frames": frames,
             "subtree": subtree,
             "url": permanent_url(_settings(request), row["short_code"]),
             "moved": moved,
@@ -251,6 +264,36 @@ def location_label(request: Request, conn: Conn, code: str) -> Response:
             "qr_svg": qr.svg_inline(url),
         },
     )
+
+
+@router.post("/l/{code}/overview", dependencies=HTMX)
+def location_pin_photo(request: Request, conn: Conn, code: str, form: Form) -> Response:
+    """ "Use as location photo" (capture gallery): pin ``photo_id``; the button becomes a
+    note. A photo that is not one of the location's answers 400 (shown in place)."""
+    row = _resolve(request, conn, code)
+    if isinstance(row, Response):
+        return row
+    photo_id = _opt_int(form, "photo_id")
+    try:
+        if photo_id is None:
+            raise locations.LocationError("Choose a photo.")
+        locations.pin_overview(conn, row["id"], photo_id)
+    except locations.LocationError as exc:
+        return _inline_error(request, str(exc))
+    return Response(
+        '<span class="muted pin-done" role="status">Location photo</span>',
+        media_type="text/html",
+    )
+
+
+@router.post("/l/{code}/overview/auto", dependencies=HTMX)
+def location_auto_photo(request: Request, conn: Conn, code: str) -> Response:
+    """ "Pick automatically": forget the pinned photo and reload the page."""
+    row = _resolve(request, conn, code)
+    if isinstance(row, Response):
+        return row
+    locations.unpin_overview(conn, row["id"])
+    return Response("", media_type="text/html", headers={"HX-Refresh": "true"})
 
 
 # ---------------------------------------------------------------- location forms
@@ -635,9 +678,46 @@ def _live_item(conn: sqlite3.Connection, item_id: int) -> sqlite3.Row:
     return row
 
 
-def _row(request: Request, conn: sqlite3.Connection, item_id: int) -> Response:
+def _row(
+    request: Request, conn: sqlite3.Connection, item_id: int, editing: bool = False
+) -> Response:
     item = _live_item(conn, item_id)
-    return templates.TemplateResponse(request, "partials/item_row.html", {"item": item})
+    return templates.TemplateResponse(
+        request,
+        "partials/item_row.html",
+        {"item": item, "crops": boxes.review_crops(conn, [item_id]), "editing": editing},
+    )
+
+
+def _inline_error(request: Request, message: str) -> Response:
+    """A 400 message partial, shown in place by elements marked data-show-errors."""
+    return templates.TemplateResponse(
+        request, "capture_message.html", {"message": message}, status_code=400
+    )
+
+
+@router.get("/items/{item_id}/row")
+def item_row(request: Request, conn: Conn, item_id: int) -> Response:
+    """The item's list row (Cancel / Esc of the inline rename)."""
+    return _row(request, conn, item_id)
+
+
+@router.get("/items/{item_id}/name")
+def item_name_form(request: Request, conn: Conn, item_id: int) -> Response:
+    """The row with its name as a text input (inline rename)."""
+    return _row(request, conn, item_id, editing=True)
+
+
+@router.post("/items/{item_id}/name", dependencies=HTMX)
+def item_rename(request: Request, conn: Conn, item_id: int, form: Form) -> Response:
+    """Save the inline rename; the row comes back. A bad name answers 400 (shown under
+    the input)."""
+    _live_item(conn, item_id)
+    try:
+        items.rename(conn, item_id, form.get("name", ""))
+    except items.ItemError as exc:
+        return _inline_error(request, str(exc))
+    return _row(request, conn, item_id)
 
 
 @router.post("/items/{item_id}/quantity", dependencies=HTMX)
@@ -652,6 +732,15 @@ def item_adjust(request: Request, conn: Conn, item_id: int, form: Form) -> Respo
 @router.post("/items/{item_id}/used-up", dependencies=HTMX)
 def item_used_up(request: Request, conn: Conn, item_id: int) -> Response:
     if not items.use_up(conn, item_id):
+        raise HTTPException(status_code=404, detail="item not found")
+    row = items.get(conn, item_id, include_deleted=True)
+    return templates.TemplateResponse(request, "partials/item_used_up.html", {"item": row})
+
+
+@router.post("/items/{item_id}/delete", dependencies=HTMX)
+def item_delete(request: Request, conn: Conn, item_id: int) -> Response:
+    """Delete (a wrong detection): soft delete; the row becomes "Deleted: X · Undo"."""
+    if not items.delete_item(conn, item_id):
         raise HTTPException(status_code=404, detail="item not found")
     row = items.get(conn, item_id, include_deleted=True)
     return templates.TemplateResponse(request, "partials/item_used_up.html", {"item": row})
@@ -725,3 +814,68 @@ def pending_move_cancel(request: Request, conn: Conn) -> Response:
     """Cancel scan-to-move; the empty response closes the sheet."""
     sessions.clear_pending_move(conn, request.state.session.token_hash)
     return Response("", media_type="text/html")
+
+
+# ---------------------------------------------------------------- item photo and outline
+
+
+@router.get("/items/{item_id}/photo")
+def item_photo(
+    request: Request,
+    conn: Conn,
+    item_id: int,
+    saved: str = "",
+) -> Response:
+    """The big photo with the item's outline ("Fix outline" draws a new one), and a switcher
+    when several photos show it (``boxes.photo_choices``). Default photo: the one of the
+    item's preferred box (its thumbnail), else the first."""
+    item = items.get(conn, item_id)
+    if item is None:
+        return _message(request, "Not found", "This item does not exist or was used up.", 404)
+    choices = boxes.photo_choices(conn, item_id)
+    if not choices:
+        return _message(request, "No photo", "There is no photo of this item yet.", 404)
+    by_id = {choice.photo_id: choice for choice in choices}
+    try:
+        photo = int(request.query_params.get("photo", ""))
+    except ValueError:  # a malformed ?photo= shows the default photo
+        photo = None
+    crop = boxes.review_crops(conn, [item_id]).get(item_id)
+    if photo not in by_id:
+        preferred = crop.photo_id if crop is not None else None
+        photo = preferred if preferred in by_id else choices[0].photo_id
+    # The switcher shows at most SWITCHER_MAX photos, always including the selected one.
+    switcher = choices[:SWITCHER_MAX]
+    if photo not in {choice.photo_id for choice in switcher}:
+        switcher[-1] = by_id[photo]
+    return templates.TemplateResponse(
+        request,
+        "item_photo.html",
+        {
+            "item": item,
+            "choices": switcher,
+            "selected": by_id[photo],
+            "min_box": boxes.MIN_USER_BOX,
+            "saved": saved == "1",
+        },
+    )
+
+
+@router.post("/items/{item_id}/box", dependencies=HTMX)
+def item_box(request: Request, conn: Conn, item_id: int, form: Form) -> Response:
+    """Save a drawn outline: it replaces the item's boxes on that photo (a user box, which
+    later captures never overwrite). The photo must be one ``photo_choices`` offers.
+    Answers 400 (shown in the page) for a bad outline; on success the page reloads."""
+    _live_item(conn, item_id)
+    photo_id = _opt_int(form, "photo_id")
+    if photo_id not in {choice.photo_id for choice in boxes.photo_choices(conn, item_id)}:
+        return _inline_error(request, "This photo cannot be used for this item.")
+    try:
+        boxes.set_user_box(conn, item_id, photo_id, boxes.parse_user_box(form))
+    except boxes.BoxError as exc:
+        return _inline_error(request, str(exc))
+    return Response(
+        "",
+        media_type="text/html",
+        headers={"HX-Redirect": f"/items/{item_id}/photo?photo={photo_id}&saved=1"},
+    )

@@ -1,5 +1,5 @@
 <li class="item used-up" id="item-{{ item.id }}" data-item-id="{{ item.id }}" role="status">
-  <span>Used up: {{ item.name }}</span>
+  <span>{{ "Deleted" if item.deleted_reason == "deleted" else "Used up" }}: {{ item.name }}</span>
   <button type="button" hx-post="/items/{{ item.id }}/restore"
           hx-target="#item-{{ item.id }}" hx-swap="outerHTML">Undo</button>
 </li>

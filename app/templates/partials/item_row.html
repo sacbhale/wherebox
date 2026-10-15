@@ -1,13 +1,36 @@
-<li class="item" id="item-{{ item.id }}" data-item-id="{{ item.id }}">
+{# An item's list row (location page, search, home live search). Context: item; optional
+   crops ({item id: Crop}, a 48 px thumbnail linking to the item photo view) and editing
+   (the name as a text input: inline rename; the quick actions are left out so it is wide). #}
+{% from "partials/crop.html" import crop_link %}
+{% set crop = crops.get(item.id) if crops is defined and crops else none %}
+<li class="item{% if editing is defined and editing %} editing{% endif %}" id="item-{{ item.id }}" data-item-id="{{ item.id }}">
+  {% if crop %}{{ crop_link(crop, "/items/%d/photo" % item.id, "thumb-%d" % item.id, "Photo of " ~ item.name, "item-thumb") }}{% endif %}
   <div class="item-main">
-    <a class="item-name" href="/items/{{ item.id }}/edit">{{ item.name }}</a>
+    {% if editing is defined and editing %}
+    <form class="rename-form" id="rename-{{ item.id }}" hx-post="/items/{{ item.id }}/name"
+          hx-target="#item-{{ item.id }}" hx-swap="outerHTML" data-rename
+          data-show-errors data-error-target="#rename-{{ item.id }}-message">
+      <input name="name" id="rename-{{ item.id }}-input" value="{{ item.name }}" maxlength="200" required
+             autocomplete="off" aria-label="New name for {{ item.name }}" data-rename-input>
+      <div class="rename-actions">
+        <button type="submit" id="rename-{{ item.id }}-save">Save</button>
+        <button type="button" class="secondary" id="rename-{{ item.id }}-cancel" data-rename-cancel
+                hx-get="/items/{{ item.id }}/row" hx-target="#item-{{ item.id }}" hx-swap="outerHTML">Cancel</button>
+      </div>
+      <div class="form-message" id="rename-{{ item.id }}-message" data-form-message></div>
+    </form>
+    {% else %}
+    <button type="button" class="item-name" id="name-{{ item.id }}" title="Tap to rename"
+            hx-get="/items/{{ item.id }}/name" hx-target="#item-{{ item.id }}" hx-swap="outerHTML">{{ item.name }}</button>
     {% if item.needs_review %}<span class="badge">review</span>{% endif %}
     <div class="item-meta muted">
       {% if item.location_path %}<a class="item-path" href="/l/{{ item.location_code }}">{{ item.location_path }}</a>{% endif %}
       {% if item.category_name %} · {{ item.category_name }}{% endif %}
       {% if item.expiry_date %} · exp. {{ item.expiry_date }}{% endif %}
     </div>
+    {% endif %}
   </div>
+  {% if not (editing is defined and editing) %}
   <div class="item-actions">
     <button type="button" class="qty-btn" id="minus-{{ item.id }}" aria-label="Remove one {{ item.name }}"
             hx-post="/items/{{ item.id }}/quantity" hx-vals='{"delta": "-1"}'
@@ -21,4 +44,5 @@
             aria-haspopup="dialog"
             hx-get="/items/{{ item.id }}/actions" hx-target="#sheet" hx-swap="innerHTML">⋯</button>
   </div>
+  {% endif %}
 </li>
