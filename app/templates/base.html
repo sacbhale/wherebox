@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231d6b65' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M3 8.5 12 4l9 4.5v8L12 21l-9-4.5z'/%3E%3Cpath d='M3 8.5 12 13l9-4.5M12 13v8'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ static_url('app.css') }}">
   <script src="{{ static_url('vendor/htmx.min.js') }}" defer></script>
   <script src="{{ static_url('app.js') }}" defer></script>
@@ -12,12 +13,13 @@
 <body{% if request.state.session is defined %} class="with-bar"{% endif %}>
   {% if request.state.session is defined %}
   <header class="topbar">
-    <a class="brand" href="/">{{ app_name }}</a>
+    <a class="brand" href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 12 4l9 4.5v8L12 21l-9-4.5z"/><path d="M3 8.5 12 13l9-4.5M12 13v8"/></svg>{{ app_name }}</a>
+    {% set here = request.url.path %}
     <nav>
-      <a href="/search">Search</a>
-      <a href="/items/new">Add item</a>
-      <a href="/review" id="nav-review">Review</a>
-      <a href="/settings">Settings</a>
+      <a href="/search"{% if here == "/search" %} aria-current="page"{% endif %}>Search</a>
+      <a href="/items/new"{% if here == "/items/new" %} aria-current="page"{% endif %}>Add item</a>
+      <a href="/review" id="nav-review"{% if here == "/review" %} aria-current="page"{% endif %}>Review</a>
+      <a href="/settings"{% if here.startswith("/settings") %} aria-current="page"{% endif %}>Settings</a>
       <form method="post" action="/logout" class="inline">
         <button type="submit" class="link">Sign out</button>
       </form>

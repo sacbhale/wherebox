@@ -1,3 +1,4 @@
+import re
 import time
 
 import pytest
@@ -65,7 +66,7 @@ def test_brand_comes_from_app_name(auth_client, monkeypatch):
     monkeypatch.setitem(templates.env.globals, "app_name", "Testbox")
     home = auth_client.get("/").text
     assert "<title>Testbox</title>" in home
-    assert '<a class="brand" href="/">Testbox</a>' in home
+    assert re.search(r'<a class="brand" href="/"><svg[^>]*>.*?</svg>Testbox</a>', home)
     assert "<h1>Testbox</h1>" in home
     assert "<title>Search · Testbox</title>" in auth_client.get("/search").text
     assert "Inventory" not in home
