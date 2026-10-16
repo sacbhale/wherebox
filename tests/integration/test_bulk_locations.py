@@ -408,3 +408,188 @@ def test_children_labels_print_in_creation_order_and_cap_at_100(auth_client, aut
         locations.create_many(conn, [f"Box {n}" for n in range(1, 51)], garage)
     page = auth_client.get(f"/l/{code}").text
     assert "(first 100 of 110)" in page
+
+
+# ---------------------------------------------------------------- choosing labels
+
+
+def sheet_names(html: str) -> list[str]:
+    return re.findall(r'<p class="sheet-name">([^<]+)</p>', html)
+
+
+def printed_at(settings, location_id):
+    with open_db(settings) as conn:
+        return conn.execute(
+            "SELECT label_printed_at FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()[0]
+
+
+def test_set_label_printed_marks_live_ids_only(conn):
+    (garage,) = make_chain(conn, ["Garage"])
+    shelf1, shelf2, gone = locations.create_many(conn, ["S1", "S2", "S3"], garage).created
+    locations.delete(conn, gone)
+    assert locations.set_label_printed(conn, [shelf1, gone, 9999, shelf1], True) == 1
+    assert locations.get(conn, shelf1)["label_printed_at"] is not None
+    assert locations.get(conn, shelf2)["label_printed_at"] is None
+    assert locations.set_label_printed(conn, [shelf1, shelf2], False) == 2
+    assert locations.get(conn, shelf1)["label_printed_at"] is None
+    with pytest.raises(locations.LocationError, match="At most 100"):
+        locations.set_label_printed(conn, list(range(1, 102)), True)
+
+
+def test_mark_printed_route_is_protected():
+    assert ("POST", "/labels/printed") in PROTECTED
+
+
+def test_pick_accepts_commas_and_repeated_values_and_ignores_ids_outside_the_pool(lan_client):
+    ids = lan_client.ids
+    pool = ",".join(map(str, ids[:5]))
+    comma = lan_client.get("/labels", params={"ids": pool, "pick": f"{ids[0]},{ids[2]}"}).text
+    repeated = lan_client.get(
+        "/labels", params=[("ids", pool), ("pick", ""), ("pick", ids[0]), ("pick", ids[2])]
+    ).text
+    assert sheet_names(comma) == sheet_names(repeated) == ["Shelf 1", "Shelf 3"]
+    outside = lan_client.get(
+        "/labels", params={"ids": pool, "pick": f"{ids[1]},{ids[7]},99999"}
+    ).text
+    assert sheet_names(outside) == ["Shelf 2"]
+    for bad in ("1,x", "-1", "99999999999999999999", ",".join(str(n) for n in range(101))):
+        assert lan_client.get("/labels", params={"ids": pool, "pick": bad}).status_code == 400
+
+
+def test_default_selection_is_the_unprinted_labels_or_all(lan_client):
+    ids = lan_client.ids
+    pool = ",".join(map(str, ids))
+    with open_db(lan_client.settings) as conn:
+        locations.set_label_printed(conn, ids[:8], True)
+    page = lan_client.get("/labels", params={"ids": pool}).text
+    assert sheet_names(page) == ["Shelf 9", "Shelf 10"]
+    assert "2 labels on 1 sheet" in page and "Choose labels: 2 of 10 selected" in page
+    assert page.count("Not printed yet") == 2 and page.count("Printed 20") == 8
+    assert page.count("checked") == 2
+    assert re.search(r'id="pick-panel"\s*open>', page)
+    with open_db(lan_client.settings) as conn:
+        locations.set_label_printed(conn, ids, True)
+    assert len(sheet_names(lan_client.get("/labels", params={"ids": pool}).text)) == 10
+    single = lan_client.get("/labels", params={"ids": ids[0]}).text  # "Add to label sheet"
+    assert sheet_names(single) == ["Shelf 1"]
+    assert re.search(r'id="pick-panel"\s*>', single)  # closed for a single location
+
+
+def test_empty_pick_selects_nothing(lan_client):
+    page = lan_client.get("/labels", params={"ids": ",".join(map(str, lan_client.ids)), "pick": ""})
+    assert page.status_code == 200
+    assert "Nothing selected — tick at least one location" in page.text
+    assert 'class="label-sheet"' not in page.text and "sheet-cell print" not in page.text
+    assert re.search(r'<button type="button" id="sheet-print" data-print\s+disabled>', page.text)
+    assert 'id="mark-printed"' not in page.text
+    assert "checked" not in page.text
+
+
+def test_labels_render_in_pool_order_only_for_picked(lan_client):
+    ids = lan_client.ids
+    pick = f"{ids[5]},{ids[1]},{ids[3]}"
+    page = lan_client.get("/labels", params={"ids": ",".join(map(str, ids)), "pick": pick}).text
+    assert sheet_names(page) == ["Shelf 2", "Shelf 4", "Shelf 6"]
+    assert label_cells(page) == [(1, 1), (1, 2), (1, 3)]
+    assert "3 labels on 1 sheet" in page
+
+
+def test_every_link_carries_the_pick(lan_client):
+    ids = lan_client.ids
+    pool = f"{ids[0]},{ids[1]},{ids[2]}"
+    pick = f"{ids[0]},{ids[2]}"
+    encoded = f"pick={ids[0]}%2C{ids[2]}"
+    page = lan_client.get("/labels", params={"ids": pool, "pick": pick}).text
+    hrefs = re.findall(r'href="(/labels\?[^"]+)"', page)
+    assert len(hrefs) == 22  # 21 sheet-map cells and the test sheet
+    assert all(href.endswith(encoded) for href in hrefs if "test=1" not in href)
+    assert f"test=1&amp;{encoded}" in page
+    assert f'name="pick" value="{ids[1]}" form="sheet-form"' in page
+    assert re.search(rf'name="pick" value="{ids[0]}" form="sheet-form"\s+checked', page)
+    test = lan_client.get("/labels", params={"ids": pool, "pick": pick, "test": "1"}).text
+    assert f'<input type="hidden" name="pick" value="{pick}">' in test
+    (back,) = re.findall(r'href="(/labels\?[^"]+)"', test)
+    assert back.endswith(encoded)
+    default = lan_client.get("/labels", params={"ids": pool}).text  # the default, made explicit
+    assert f"start_col=1&amp;pick={ids[0]}%2C{ids[1]}%2C{ids[2]}" in default
+
+
+def test_mark_printed_and_not_printed(lan_client):
+    ids = lan_client.ids
+    pool = ",".join(map(str, ids))
+    page = lan_client.get("/labels", params={"ids": pool, "pick": f"{ids[0]},{ids[1]}"}).text
+    assert 'action="/labels/printed"' in page and "Mark these 2 as printed" in page
+    assert "Mark as not printed" in page
+    with open_db(lan_client.settings) as conn:
+        locations.delete(conn, ids[2])
+    form = {
+        "ids": pool,
+        "pick": f"{ids[0]},{ids[1]},{ids[2]}",
+        "start_row": "3",
+        "start_col": "2",
+        "dx": "0.5",
+        "dy": "0",
+        "printed": "1",
+    }
+    response = lan_client.post("/labels/printed", data=form, follow_redirects=False)
+    assert response.status_code == 303
+    target = response.headers["location"]
+    assert target.startswith("/labels?") and "pick" not in target
+    assert "start_row=3" in target and "dx=0.5" in target and "marked=2" in target
+    assert printed_at(lan_client.settings, ids[0]) and printed_at(lan_client.settings, ids[1])
+    assert printed_at(lan_client.settings, ids[2]) is None  # deleted: ignored
+    after = lan_client.get(target).text
+    assert "Marked 2 as printed." in after
+    assert sheet_names(after) == [f"Shelf {n}" for n in range(4, 11)]  # the rest, unprinted
+
+    response = lan_client.post(
+        "/labels/printed", data=form | {"pick": str(ids[0]), "printed": "0"}, follow_redirects=False
+    )
+    assert response.status_code == 303 and "unmarked=1" in response.headers["location"]
+    assert printed_at(lan_client.settings, ids[0]) is None
+    assert "Marked 1 as not printed." in lan_client.get(response.headers["location"]).text
+
+
+def test_mark_printed_rejects_cross_origin_and_bad_ids(lan_client):
+    ids = lan_client.ids
+    data = {"ids": str(ids[0]), "pick": str(ids[0]), "printed": "1"}
+    response = lan_client.post(
+        "/labels/printed", data=data, headers={"Origin": "http://evil.example"}
+    )
+    assert response.status_code == 403
+    assert printed_at(lan_client.settings, ids[0]) is None
+    too_many = ",".join(str(n) for n in range(1, 102))
+    bad_forms = (
+        data | {"pick": too_many},
+        data | {"pick": ""},
+        data | {"pick": "1,x"},
+        data | {"printed": "yes"},
+        {"ids": str(ids[0]), "pick": str(ids[0])},  # no printed value
+        data | {"pick": str(ids[1])},  # outside the pool
+    )
+    for bad in bad_forms:
+        assert lan_client.post("/labels/printed", data=bad).status_code == 400
+    assert printed_at(lan_client.settings, ids[0]) is None
+    assert printed_at(lan_client.settings, ids[1]) is None
+
+
+def test_location_page_shows_label_printed_status(lan_client):
+    code = lan_client.codes[0]
+    assert "Label not printed yet" in lan_client.get(f"/l/{code}").text
+    with open_db(lan_client.settings) as conn:
+        locations.set_label_printed(conn, [lan_client.ids[0]], True)
+    page = lan_client.get(f"/l/{code}").text
+    assert re.search(r'id="label-printed">Label printed \d{4}-\d{2}-\d{2}<', page)
+
+
+def test_single_label_page_does_not_mark(lan_client):
+    assert lan_client.get(f"/l/{lan_client.codes[0]}/label").status_code == 200
+    assert printed_at(lan_client.settings, lan_client.ids[0]) is None
+
+
+def test_selection_controls_are_screen_only(lan_client):
+    page = lan_client.get("/labels", params={"ids": ",".join(map(str, lan_client.ids))}).text
+    controls = page.split('<div class="label-sheets">')[0]
+    for marker in ('id="pick-panel"', 'id="mark-form"', 'id="print-check"'):
+        assert marker in controls.split('class="no-print" id="label-controls"', 1)[1]

@@ -12,6 +12,8 @@
 <body class="labels-page">
 {% set query = {"ids": ids, "dx": dx, "dy": dy} %}
 {% set start = "&amp;start_row=%d&amp;start_col=%d"|format(start_row, start_col)|safe %}
+{# Every link keeps the selection; it goes last so the other parameters read as before. #}
+{% set sel = ("&amp;" ~ {"pick": pick}|urlencode)|safe %}
 <main class="page">
   <div class="no-print" id="label-controls" data-label-offset>
     <p class="links"><a href="/">‹ Home</a></p>
@@ -20,7 +22,34 @@
     <p>Prints only the 21 label outlines. Hold the printout against a sticker sheet up to the
       light and adjust the offset until the outlines match.</p>
     {% else %}
+    {% if marked is not none %}<p class="notice" id="labels-marked" role="status">Marked {{ marked }} as printed.</p>{% endif %}
+    {% if unmarked is not none %}<p class="notice" id="labels-marked" role="status">Marked {{ unmarked }} as not printed.</p>{% endif %}
+    {% if count %}
     <h1>{{ count }} label{{ "s" if count != 1 }} on {{ sheets|length }} sheet{{ "s" if sheets|length != 1 }}</h1>
+    {% else %}
+    <h1>No labels to print</h1>
+    <p class="notice" id="nothing-selected" role="status">Nothing selected — tick at least one location.</p>
+    {% endif %}
+    <details class="panel pick-panel" id="pick-panel" {% if pool|length > 1 %}open{% endif %}>
+      <summary>Choose labels: {{ count }} of {{ pool|length }} selected</summary>
+      <p class="actions">
+        <button type="button" class="secondary" data-pick="all">All</button>
+        <button type="button" class="secondary" data-pick="none">None</button>
+        <button type="button" class="secondary" data-pick="unprinted">Not printed only</button>
+      </p>
+      <ul class="pick-list" id="pick-list">
+        {% for location in pool %}
+        <li><label class="check">
+          <input type="checkbox" name="pick" value="{{ location.id }}" form="sheet-form"
+                 {% if location.picked %}checked{% endif %}
+                 {% if location.printed_on %}data-printed{% endif %}>
+          <span><strong>{{ location.name }}</strong>
+            {% if location.path %}<span class="muted">{{ location.path }}</span>{% endif %}
+            <span class="muted">{% if location.printed_on %}Printed {{ location.printed_on }}{% else %}Not printed yet{% endif %}</span></span>
+        </label></li>
+        {% endfor %}
+      </ul>
+    </details>
     <p>For A4 sticker sheets with 21 labels (3 × 7, 63.5 × 38.1 mm).
       Tap where to start if part of the sheet is used.</p>
     <div class="sheet-map" id="sheet-map" role="group" aria-label="Start position">
@@ -28,7 +57,7 @@
       {% set index = (r - 1) * cols + c - 1 %}
       {% set state = "used" if index < first else ("print" if index < first + count else "free") %}
       <a class="sheet-cell {{ state }}" id="cell-{{ r }}-{{ c }}"
-         href="/labels?{{ query|urlencode }}&amp;start_row={{ r }}&amp;start_col={{ c }}"
+         href="/labels?{{ query|urlencode }}&amp;start_row={{ r }}&amp;start_col={{ c }}{{ sel }}"
          aria-label="Start at row {{ r }}, column {{ c }}"
          {% if r == start_row and c == start_col %}aria-current="true"{% endif %}>
         {%- if state == "print" %}{{ index - first + 1 }}{% endif -%}
@@ -36,8 +65,10 @@
       {% endfor %}{% endfor %}
     </div>
     {% endif %}
-    <form class="stack sheet-form" method="get" action="/labels">
+    <form class="stack sheet-form" id="sheet-form" method="get" action="/labels">
       <input type="hidden" name="ids" value="{{ ids }}">
+      {# Test sheet: carries the selection. Labels: always sends pick, even with no box ticked. #}
+      <input type="hidden" name="pick" value="{{ pick if test else '' }}">
       {% if test %}
       <input type="hidden" name="test" value="1">
       <input type="hidden" name="start_row" value="{{ start_row }}">
@@ -65,13 +96,25 @@
       None or Default. On a phone: Share → Print → Save as PDF (or save the page as PDF), then
       print the PDF at 100%.</p>
     <p class="actions">
-      <button type="button" id="sheet-print" data-print>Print</button>
+      <button type="button" id="sheet-print" data-print {% if not test and not count %}disabled{% endif %}>Print</button>
       {% if test %}
-      <a class="button secondary" href="/labels?{{ query|urlencode }}{{ start }}">Back to labels</a>
+      <a class="button secondary" href="/labels?{{ query|urlencode }}{{ start }}{{ sel }}">Back to labels</a>
       {% else %}
-      <a class="button secondary" id="sheet-test" href="/labels?{{ query|urlencode }}{{ start }}&amp;test=1">Print a test sheet</a>
+      <a class="button secondary" id="sheet-test" href="/labels?{{ query|urlencode }}{{ start }}&amp;test=1{{ sel }}">Print a test sheet</a>
       {% endif %}
     </p>
+    {% if not test and count %}
+    <form class="stack mark-form" id="mark-form" method="post" action="/labels/printed">
+      {% for key, value in {"ids": ids, "pick": pick, "start_row": start_row, "start_col": start_col, "dx": dx, "dy": dy}.items() %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endfor %}
+      <p class="notice" id="print-check" role="status" hidden>Did they print correctly? Mark them as printed.</p>
+      <p class="actions">
+        <button type="submit" name="printed" value="1" id="mark-printed" data-mark-printed>Mark these {{ count }} as printed</button>
+        <button type="submit" name="printed" value="0" class="secondary" id="mark-not-printed">Mark as not printed</button>
+      </p>
+    </form>
+    {% endif %}
   </div>
   <div class="label-sheets">
     {% for sheet in sheets %}

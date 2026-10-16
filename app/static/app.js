@@ -469,6 +469,8 @@
     var next = new URLSearchParams(window.location.search);
     next.set("dx", "0");
     next.set("dy", "0");
+    next.delete("marked");
+    next.delete("unmarked");
     window.location.assign("?" + next.toString());
   });
   if (document.querySelector("[data-label-offset]")) {
@@ -490,6 +492,34 @@
       }
     } catch (e) { /* no storage: no remembered offset */ }
   }
+
+  // Label sheet: "All" / "None" / "Not printed only" set the boxes; any change reloads the
+  // sheet with the new selection. After the print dialog closes, prompt to mark them printed
+  // (never marked automatically).
+  function submitPick() {
+    var form = document.getElementById("sheet-form");
+    if (form) form.submit();
+  }
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-pick]");
+    if (!button) return;
+    var mode = button.getAttribute("data-pick");
+    document.querySelectorAll('#pick-list input[name="pick"]').forEach(function (box) {
+      box.checked = mode === "all" || (mode === "unprinted" && !box.hasAttribute("data-printed"));
+    });
+    submitPick();
+  });
+  document.addEventListener("change", function (event) {
+    if (event.target.matches('#pick-list input[name="pick"]')) submitPick();
+  });
+  window.addEventListener("afterprint", function () {
+    var check = document.getElementById("print-check");
+    var mark = document.querySelector("[data-mark-printed]");
+    if (!check || !mark) return;
+    check.hidden = false;
+    mark.classList.add("is-prompt");
+    mark.focus();
+  });
 
   // ---------------------------------------------------------------- inline rename
   // partials/item_row.html: tapping the name loads the row with a text input (hx-get); the

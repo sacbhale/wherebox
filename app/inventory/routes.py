@@ -18,6 +18,7 @@ from app.capture import boxes, gallery
 from app.capture import overview as capture_overview
 from app.config import Settings
 from app.db.deps import Conn
+from app.db.timestamps import parse_utc
 from app.inventory import categories, items, locations, search
 from app.templating import templates
 
@@ -214,6 +215,7 @@ def location_page(request: Request, conn: Conn, code: str, sub: str = "") -> Res
             "overview_frames": frames,
             "subtree": subtree,
             "url": permanent_url(_settings(request), row["short_code"]),
+            "label_printed_on": _printed_on(request, row["label_printed_at"]),
             "moved": moved,
         },
     )
@@ -384,14 +386,15 @@ def location_delete(request: Request, conn: Conn, code: str) -> Response:
 
 # ---------------------------------------------------------------- bulk add and label sheets
 
-IDS_MAX = 100
+IDS_MAX = locations.LABEL_IDS_MAX
 ID_DIGITS_MAX = 18  # fits SQLite's integer
 NAMES_CHARS_MAX = 20_000
 
 
 def _id_list(params: Any, key: str) -> list[int]:
-    """Comma-separated ids, deduplicated in order; at most IDS_MAX."""
-    parts = [part.strip() for part in (params.get(key) or "").split(",") if part.strip()]
+    """Comma-separated ids (the key may also repeat), deduplicated in order; at most IDS_MAX."""
+    values = params.getlist(key) if hasattr(params, "getlist") else [params.get(key) or ""]
+    parts = [part.strip() for value in values for part in value.split(",") if part.strip()]
     if not all(part.isascii() and part.isdigit() and len(part) <= ID_DIGITS_MAX for part in parts):
         raise HTTPException(status_code=400, detail=f"{key} must be whole numbers, comma-separated")
     if len(parts) > IDS_MAX:
@@ -509,11 +512,20 @@ def _offset_words(dx: float, dy: float) -> str:
     return ", ".join(parts) or "none"
 
 
+def _printed_on(request: Request, value: str | None) -> str | None:
+    """A stored ``label_printed_at`` as the local date ("2026-10-15"); None if never printed."""
+    moment = parse_utc(value)
+    return moment.astimezone(ZoneInfo(_settings(request).tz)).date().isoformat() if moment else None
+
+
 @router.get("/labels")
 def label_sheet_page(request: Request, conn: Conn) -> Response:
-    """Printable 21-up A4 sticker sheets for ``ids``, starting at (start_row, start_col) of the
-    first sheet and shifted by the printer calibration (dx, dy mm). ``test=1`` prints only the
-    label outlines, to check alignment."""
+    """Printable 21-up A4 sticker sheets for the selected (``pick``) locations among ``ids``,
+    starting at (start_row, start_col) of the first sheet and shifted by the printer
+    calibration (dx, dy mm). ``test=1`` prints only the label outlines, to check alignment.
+
+    ``ids`` is the pool to choose from; without ``pick`` the labels never printed are selected
+    (all of them when every one was printed). ``pick`` ids outside the pool are ignored."""
     params = request.query_params
     ids = _id_list(params, "ids")
     if not ids:
@@ -525,12 +537,17 @@ def label_sheet_page(request: Request, conn: Conn) -> Response:
     rows = _live_rows(conn, ids)
     if not rows:
         return _message(request, "Nothing to print", "None of these locations exist any more.", 404)
+    if "pick" in params:
+        picked = set(_id_list(params, "pick"))
+        selected = [row for row in rows if row["id"] in picked]
+    else:
+        selected = [row for row in rows if row["label_printed_at"] is None] or rows
     labels: list[dict | None] = []
     if test:
         cells = label_sheet.layout(label_sheet.PER_SHEET, 1, 1, dx, dy)
         labels = [None] * len(cells)
     else:
-        for row in rows:
+        for row in selected:
             url = permanent_url(_settings(request), row["short_code"])
             parents = locations.ancestors(conn, row["id"])[:-1]
             labels.append(
@@ -549,13 +566,25 @@ def label_sheet_page(request: Request, conn: Conn) -> Response:
         if cell.sheet == len(sheets):
             sheets.append([])
         sheets[-1].append((cell, label))
+    picked_ids = {row["id"] for row in selected}
+    pool = [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "path": locations.path(conn, row["parent_id"]) if row["parent_id"] else "",
+            "printed_on": _printed_on(request, row["label_printed_at"]),
+            "picked": row["id"] in picked_ids,
+        }
+        for row in rows
+    ]
+    marked, unmarked = _opt_int(params, "marked"), _opt_int(params, "unmarked")
     return templates.TemplateResponse(
         request,
         "labels.html",
         {
             "sheets": sheets,
             "test": test,
-            "count": len(rows),
+            "count": len(selected),
             "start_row": start_row,
             "start_col": start_col,
             "first": (start_row - 1) * label_sheet.COLS + start_col - 1,
@@ -565,8 +594,36 @@ def label_sheet_page(request: Request, conn: Conn) -> Response:
             "dy": f"{dy:g}",
             "offset_words": _offset_words(dx, dy),
             "ids": ",".join(str(row["id"]) for row in rows),
+            "pick": ",".join(str(row["id"]) for row in selected),
+            "pool": pool,
+            "marked": marked,
+            "unmarked": unmarked,
         },
     )
+
+
+@router.post("/labels/printed")
+def label_sheet_mark_printed(form: Form, conn: Conn) -> Response:
+    """Remember the selected labels (``pick``) as printed (``printed=1``) or not printed
+    (``printed=0``); then back to the sheet for the pool (``ids``) with the default
+    selection, so the ones just marked printed drop out of it."""
+    pool = _id_list(form, "ids")
+    picked = [i for i in _id_list(form, "pick") if not pool or i in pool]
+    if not picked:
+        raise HTTPException(status_code=400, detail="pick is required")
+    if form.get("printed") not in ("0", "1"):
+        raise HTTPException(status_code=400, detail="printed must be 0 or 1")
+    printed = form.get("printed") == "1"
+    count = locations.set_label_printed(conn, picked, printed)
+    query = {
+        "ids": ",".join(map(str, pool or picked)),
+        "start_row": _start(form, "start_row", label_sheet.ROWS),
+        "start_col": _start(form, "start_col", label_sheet.COLS),
+        "dx": f"{_offset(form, 'dx'):g}",
+        "dy": f"{_offset(form, 'dy'):g}",
+        "marked" if printed else "unmarked": count,
+    }
+    return _redirect(f"/labels?{urlencode(query)}")
 
 
 # ---------------------------------------------------------------- item form

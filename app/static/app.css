@@ -263,6 +263,14 @@ ul.move-targets { list-style: none; padding: 0; margin: 0; display: flex; flex-d
 .sheet-cell.print { background: #dbeafe; border: 1px solid #2563eb; }
 .sheet-cell[aria-current] { outline: 3px solid #2563eb; outline-offset: 1px; }
 .sheet-form .row label { flex: 1; }
+/* Choose labels: one checkbox row per location of the pool; long names wrap. */
+.pick-list { list-style: none; margin: 0; padding: 0; }
+.pick-list li { border-bottom: 1px solid var(--border); }
+.pick-list label.check { font-weight: 400; overflow-wrap: anywhere; }
+.pick-list label.check > span { display: flex; flex-direction: column; min-width: 0; }
+.pick-list input { flex: none; }
+.pick-panel button { min-width: 44px; }
+.mark-form .is-prompt { outline: 3px solid var(--accent); outline-offset: 2px; }
 .label-sheets { overflow-x: auto; margin-top: 1rem; }
 .label-sheet {
   position: relative; width: 210mm; height: 297mm; overflow: hidden;

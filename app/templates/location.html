@@ -98,6 +98,7 @@
     <a href="/labels?ids={{ location.id }}" id="label-sheet">Add to label sheet</a>
   </p>
   <p class="muted">Code {{ location.short_code }}</p>
+  <p class="muted" id="label-printed">{% if label_printed_on %}Label printed {{ label_printed_on }}{% else %}Label not printed yet{% endif %}</p>
 </details>
 
 {% if not location.is_system %}

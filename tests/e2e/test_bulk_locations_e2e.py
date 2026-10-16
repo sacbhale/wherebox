@@ -177,7 +177,7 @@ def pdf_pages(page: Page) -> int:
 
 def test_printer_offset_is_remembered_on_the_device(server, page: Page, ten_labels):
     server.login(page, f"/labels?ids={ten_labels}")
-    page.locator(".panel summary").tap()
+    page.locator(".sheet-form .panel summary").tap()
     page.fill("#offset-dx", "1.5")
     page.fill("#offset-dy", "-0.75")
     page.locator("#sheet-apply").tap()
@@ -200,17 +200,117 @@ def test_printer_offset_is_remembered_on_the_device(server, page: Page, ten_labe
 
 def test_offset_summary_and_reset(server, page: Page, ten_labels):
     server.login(page, f"/labels?ids={ten_labels}")
-    expect(page.locator(".panel summary")).to_have_text("Printer offset: none")
-    page.locator(".panel summary").tap()
+    expect(page.locator(".sheet-form .panel summary")).to_have_text("Printer offset: none")
+    page.locator(".sheet-form .panel summary").tap()
     page.fill("#offset-dx", "1.5")
     page.fill("#offset-dy", "-0.75")
     page.locator("#sheet-apply").tap()
     page.wait_for_url(re.compile(r".*dx=1\.5.*"))
-    expect(page.locator(".panel summary")).to_have_text(
+    expect(page.locator(".sheet-form .panel summary")).to_have_text(
         "Printer offset: 1.5 mm right, 0.75 mm up — saved on this device"
     )
     page.locator("#offset-reset").tap()
     page.wait_for_url(re.compile(r".*dx=0&dy=0.*"))
-    expect(page.locator(".panel summary")).to_have_text("Printer offset: none")
+    expect(page.locator(".sheet-form .panel summary")).to_have_text("Printer offset: none")
     page.goto(server.url(f"/labels?ids={ten_labels}"))
     expect(page.locator("#offset-dx")).to_have_value("0")
+
+
+def add_shelves(server, parent_id: int, numbers: range) -> None:
+    names = "\n".join(f"Shelf {n}" for n in numbers)
+    response = server.http.post(
+        "/locations/bulk", data={"parent_id": str(parent_id), "names": names}
+    )
+    assert response.status_code == 303, response.text
+
+
+def test_choose_labels_and_remember_printed_ones(server, page: Page):
+    garage_id, garage = server.create_location("Garage")
+    add_shelves(server, garage_id, range(1, 11))
+    server.login(page, f"/l/{garage}")
+
+    # Never printed: all 10 are ticked and render.
+    page.locator("#print-children").tap()
+    page.wait_for_url(re.compile(r".*/labels\?ids=.*"))
+    boxes = page.locator('#pick-list input[name="pick"]')
+    expect(boxes).to_have_count(10)
+    for index in range(10):
+        expect(boxes.nth(index)).to_be_checked()
+    expect(page.locator(".sheet-label")).to_have_count(10)
+    expect(page.locator("#pick-list")).to_contain_text("Not printed yet")
+    assert_phone_layout(page)
+
+    # The print dialog closing only prompts; nothing is marked until the button is tapped.
+    expect(page.locator("#print-check")).to_be_hidden()
+    page.evaluate("window.dispatchEvent(new Event('afterprint'))")
+    expect(page.locator("#print-check")).to_be_visible()
+    expect(page.locator("#mark-printed")).to_have_class(re.compile(r"\bis-prompt\b"))
+    assert not server.query("SELECT 1 FROM locations WHERE label_printed_at IS NOT NULL")
+
+    page.locator("#mark-printed").tap()
+    page.wait_for_url(re.compile(r".*marked=10.*"))
+    expect(page.locator("#labels-marked")).to_have_text("Marked 10 as printed.")
+    expect(page.locator("#pick-list")).to_contain_text("Printed ")
+    printed = server.query("SELECT count(*) AS n FROM locations WHERE label_printed_at IS NOT NULL")
+    assert printed[0]["n"] == 10
+    assert_phone_layout(page)
+
+    # Two more shelves: only the new ones are pre-selected.
+    add_shelves(server, garage_id, range(11, 13))
+    page.goto(server.url(f"/l/{garage}"))
+    page.locator("#print-children").tap()
+    page.wait_for_url(re.compile(r".*/labels\?ids=.*"))
+    expect(boxes).to_have_count(12)
+    expect(page.locator('#pick-list input[name="pick"]:checked')).to_have_count(2)
+    expect(page.locator(".sheet-label")).to_have_count(2)
+    expect(page.locator(".sheet-name")).to_have_text(["Shelf 11", "Shelf 12"])
+    assert_phone_layout(page)
+
+    # Ticking one more reloads the sheet with 3 labels, in pool order.
+    with page.expect_navigation():
+        page.locator("#pick-list label", has_text="Shelf 3").tap()
+    expect(page.locator(".sheet-label")).to_have_count(3)
+    expect(page.locator(".sheet-name")).to_have_text(["Shelf 3", "Shelf 11", "Shelf 12"])
+    assert "pick=" in page.url
+    assert_phone_layout(page)
+
+    # The selection survives a tap on the sheet map.
+    page.locator("#cell-2-1").tap()
+    page.wait_for_url(re.compile(r".*start_row=2.*"))
+    expect(page.locator(".sheet-label")).to_have_count(3)
+
+    # Nothing to print or show in the printout but the labels.
+    page.emulate_media(media="print")
+    expect(page.locator("#pick-panel")).to_be_hidden()
+    expect(page.locator("#mark-printed")).to_be_hidden()
+    expect(page.locator(".sheet-label").first).to_be_visible()
+    page.emulate_media(media="screen")
+
+    with page.expect_navigation():
+        page.locator('[data-pick="none"]').tap()
+    expect(page.locator("#nothing-selected")).to_have_text(
+        "Nothing selected — tick at least one location."
+    )
+    expect(page.locator(".sheet-label")).to_have_count(0)
+    expect(page.locator("#sheet-print")).to_be_disabled()
+    assert_phone_layout(page)
+
+    with page.expect_navigation():
+        page.locator('[data-pick="unprinted"]').tap()
+    expect(page.locator(".sheet-name")).to_have_text(["Shelf 11", "Shelf 12"])
+
+
+def test_location_page_shows_whether_the_label_was_printed(server, page: Page):
+    garage_id, garage = server.create_location("Garage")
+    server.login(page, f"/l/{garage}")
+    page.locator("#tag summary").tap()
+    expect(page.locator("#label-printed")).to_have_text("Label not printed yet")
+    response = server.http.post(
+        "/labels/printed", data={"ids": str(garage_id), "pick": str(garage_id), "printed": "1"}
+    )
+    assert response.status_code == 303, response.text
+    page.reload()
+    page.locator("#tag summary").tap()
+    expect(page.locator("#label-printed")).to_have_text(
+        re.compile(r"Label printed \d{4}-\d\d-\d\d")
+    )

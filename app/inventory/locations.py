@@ -295,6 +295,27 @@ def create_many(
     return BulkResult(created, skipped)
 
 
+LABEL_IDS_MAX = 100
+
+
+def set_label_printed(conn: sqlite3.Connection, location_ids: list[int], printed: bool) -> int:
+    """Mark the labels of the live locations among ``location_ids`` as printed now, or as not
+    printed (``printed=False``). Unknown and deleted ids are ignored. Returns how many were
+    marked. More than LABEL_IDS_MAX ids raises LocationError and changes nothing."""
+    if len(location_ids) > LABEL_IDS_MAX:
+        raise LocationError(f"At most {LABEL_IDS_MAX} locations at a time.")
+    value = NOW if printed else "NULL"
+    count = 0
+    with write_tx(conn):
+        for location_id in dict.fromkeys(location_ids):
+            count += conn.execute(
+                f"UPDATE locations SET label_printed_at = {value} "
+                "WHERE id = ? AND deleted_at IS NULL",
+                (location_id,),
+            ).rowcount
+    return count
+
+
 def rename(conn: sqlite3.Connection, location_id: int, name: str) -> None:
     name = _clean_name(name)
     with write_tx(conn):

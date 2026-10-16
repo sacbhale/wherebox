@@ -613,6 +613,13 @@ path and the URL. Up to 100 labels fit in one print; they continue onto more she
 - If the labels come out shifted, open **Printer offset**, print a **test sheet** (label
   outlines only), hold it against a sticker sheet up to the light, and adjust right/down in
   0.25 mm steps (±5 mm). The offset is saved in that browser; **Reset to 0** clears it.
+- **Choose labels** lists every location of the sheet with a checkbox and whether its label
+  was printed. Only the labels never printed are ticked at first (all of them when every
+  one was printed), so after adding a few sub-locations, **Print labels for sub-locations**
+  picks just the new ones. **All**, **None** and **Not printed only** change the ticks.
+- After printing, tap **Mark these N as printed** (the app never marks them by itself);
+  **Mark as not printed** undoes it. The location page's Tag section shows the status.
+  Printing the single label (`/l/<code>/label`) does not mark it.
 
 ## Scan-to-move in a different browser
 
